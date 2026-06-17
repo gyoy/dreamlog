@@ -1,0 +1,41 @@
+﻿# Dependencies
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+web-build/
+dist/
+build/
+
+# Logs
+*.log
+*.err
+*.err.log
+.expo-home-web*
+.expo-record-web*
+.expo-server*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Cursor local settings
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Native build cache
+android/.gradle/
+ios/Pods/
+
+# Certificates / keys
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+*.cer

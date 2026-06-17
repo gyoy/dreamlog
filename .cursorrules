@@ -1,0 +1,57 @@
+# DreamLog - Cursor & AI Agent Rules
+
+## 1. Project Technology Stack
+- **Framework**: Expo v54.0.2 (React Native)
+- **Language**: TypeScript (strict mode)
+- **Main Dependencies**: React 19.1.0, React Native 0.81.5, Expo Metro Runtime
+- **AI Engine**: Google Gemini API via `@google/generative-ai` (`src/services/gemini.ts`)
+
+---
+
+## 2. Core Layout Architecture (CRITICAL)
+This project uses a unique layout paradigm to match design fidelity 100%:
+- **Pattern**: Coordinate-based Absolute Overlay Layout.
+- **How it works**:
+  1. A full-screen raster image (from `assets/` or `assets/onboarding/`) is displayed as the background.
+  2. The designer's Figma resolution is assumed to be **393 x 852** (`HOME_DESIGN_WIDTH` & `HOME_DESIGN_HEIGHT`).
+  3. Interactive areas (buttons, tabs, cards) are mapped as transparent `<Pressable>` components absolute-positioned over the background.
+  4. Spacing, typography, and illustration values are embedded inside the background image itself.
+- **Rule**:
+  - **DO NOT** attempt to write custom Tailwind/CSS styles to rebuild cards, cards layouts, borders, or shadows.
+  - **DO** define touch coordinates in `src/data/home.ts` or `src/data/onboarding.ts` (using `x, y, width, height` based on the 393x852 canvas).
+  - Use `mapRectToScreen` to scale these coordinates dynamically based on `useWindowDimensions()`.
+
+---
+
+## 3. Design Token & Common Components System (CRITICAL)
+All styling and UI components must adhere to the centralized design token system:
+- **Design Tokens (`src/theme`)**:
+  - **Colors**: Reference `theme.colors.*` (e.g., `theme.colors.primary`, `theme.colors.bgWhite`). Do not use hardcoded hex codes.
+  - **Spacing**: Use `theme.spacing.*` scale (e.g., `theme.spacing.xl`, `theme.spacing.layoutSm`) for margin, padding, and layout spacing.
+  - **Radius**: Use `theme.radius.*` (e.g., `theme.radius.md`, `theme.radius.lg`) for `borderRadius`.
+  - **Typography**: Use font sizes and weights from `theme.typography.sizes` and `theme.typography.weights`.
+  - **Shadows**: Reference `theme.shadows.*` for cards and buttons.
+- **Common Components (`src/components/common`)**:
+  - **Card**: Use `<Card>` for content panels. It encapsulates default background, radius, and cosmic shadow values.
+  - **Button**: Use `<Button>` for actionable items. It has a built-in spring-scaling animation and primary/secondary styling.
+  - **Input**: Use `<Input>` for text entry fields. It wraps accessibility labels, text styles, border tokens, and character counters.
+
+---
+
+## 4. Gemini API Integration & AI Studio Rules
+- All AI features (dream analysis, tagging, illustration prompts) must flow through `src/services/gemini.ts`.
+- Environment variable configuration:
+  - Development API key is loaded from `.env` using `process.env.EXPO_PUBLIC_GEMINI_API_KEY`.
+- When adding new AI features:
+  - First test the prompt in **Google AI Studio** (https://aistudio.google.com/).
+  - Paste the system instructions and schemas into `src/services/gemini.ts` using Structured Outputs (`responseSchema`).
+  - Keep AI prompts in Korean and maintain a warm, empathetic, and professional psychological counselor persona.
+
+---
+
+## 5. Coding & Behavior Guidelines (from AI_GUIDE.md)
+- **documentation integrity**: Maintain all comments and docstrings.
+- **No Refactoring without Permission**: Do not change the general folder structure or rewrite massive files unless explicitly requested.
+- **Safe Area**: Ensure layouts are safe-area-compliant and responsive.
+- **Clean Code**: Remove unused console logs, temp variables, and hardcoded simulation delays before finishing.
+- **Reports**: Always format your final report at the end of the turn as described in `AI_GUIDE.md#7-보고-형식`.

@@ -1,0 +1,46 @@
+import React from 'react';
+import { StyleSheet, View, ViewStyle, StyleProp } from 'react-native';
+import { theme } from '../../theme';
+
+type CardProps = {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  padding?: number;
+  borderRadius?: number;
+  shadow?: boolean;
+  border?: boolean;
+};
+
+export function Card({
+  children,
+  style,
+  padding = theme.spacing.xl,
+  borderRadius = theme.radius.lg,
+  shadow = true,
+  border = false,
+}: CardProps) {
+  return (
+    <View
+      style={[
+        styles.card,
+        shadow && theme.shadows.card,
+        border && styles.border,
+        { padding, borderRadius },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: theme.colors.bgWhite,
+    alignSelf: 'center',
+  },
+  border: {
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+  },
+});
