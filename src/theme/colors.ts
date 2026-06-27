@@ -1,43 +1,50 @@
 export const colors = {
   // Brand colors
-  primary: '#907eff',       // Primary buttons, active markers
-  primaryLight: '#f5f2ff',  // Secondary background
-  primaryBorder: '#ded7ff', // Border for secondary components
-  accent: '#7b61ff',        // Text highlight, active elements
-  accentLight: '#8c7eff',   // Pastel lavender accent (arrows, subtext)
-  accentDark: '#7558f7',    // Selected indicators, calendar highlights
+  primary: '#8B78F6',
+  primaryLight: '#F3F0FF',
+  primaryBorder: '#E3DCFF',
+  accent: '#7C67E8',
+  accentLight: '#A596F4',
+  accentDark: '#6952D9',
 
   // Text colors
-  textPrimary: '#2d237a',   // Headers, main titles (navy/deep purple)
-  textSecondary: '#6f6a78', // Unselected states, body text
-  textMuted: '#8a82ad',     // Optional labels, sub-annotations
-  textLight: '#ffffff',     // Text on dark backgrounds (buttons)
-  textHelper: '#756fa5',    // Informative sub-texts
-  textCount: '#8a7ef2',     // Count indicators (title/memo counts)
+  textPrimary: '#241B4B',
+  textSecondary: '#625D72',
+  textMuted: '#898398',
+  textLight: '#FFFFFF',
+  textHelper: '#756D9D',
+  textCount: '#7C67E8',
 
   // Input & UI colors
-  bgWhite: '#ffffff',
-  placeholder: '#c2bbdf',
-  inputBorder: '#d9ccff',
-  cardBorder: 'rgba(226, 218, 255, 0.72)',
-  inputPlaceholder: '#8179a9',
-  memoTitle: '#25218a',
+  bgWhite: '#FFFFFF',
+  cardSurface: '#F9F7FE',
+  canvas: '#F8F7FC',
+  surfaceLavender: '#F3F0FF',
+  surfacePeach: '#FFF1EC',
+  surfaceMint: '#EAF9F4',
+  surfaceSky: '#EDF7FF',
+  surfaceButter: '#FFF8E3',
+  placeholder: '#B9B2CE',
+  inputBorder: '#E5DFFF',
+  cardBorder: 'rgba(227, 220, 255, 0.58)',
+  inputPlaceholder: '#81799E',
+  memoTitle: '#30276D',
 
   // Mood colors
-  moodHappy: '#ffd66b',
-  moodCalm: '#94ddd0',
-  moodCurious: '#ffd56e',
-  moodFear: '#ff8588',
-  moodSad: '#9ec4f7',
+  moodHappy: '#F2C85B',
+  moodCalm: '#65CDB4',
+  moodCurious: '#E9B954',
+  moodFear: '#ED8D8F',
+  moodSad: '#7DB5E8',
 
   // System & Accent decorations
-  starGold: '#ffd86a',
-  weekendPink: '#c05282',
+  starGold: '#F2C85B',
+  weekendPink: '#C8658F',
 
   // Shadows
-  shadowPrimary: '#6f4be8',
-  shadowSecondary: '#a69aff',
-  shadowText: 'rgba(111, 75, 232, 0.1)',
+  shadowPrimary: '#7562C8',
+  shadowSecondary: '#A596F4',
+  shadowText: 'rgba(86, 68, 158, 0.10)',
 };
 
 export type ColorsType = typeof colors;

@@ -102,7 +102,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 5 * scale,
               height: 4 * scale,
               top: 9 * scale,
-              left: 7 * scale,
+              left: 8 * scale,
               borderTopWidth: 1.5 * scale,
               borderRadius: 3.5 * scale,
             },
@@ -128,7 +128,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 5 * scale,
               height: 1.5 * scale,
               top: 11 * scale,
-              left: 7 * scale,
+              left: 8 * scale,
               transform: [{ rotate: '45deg' }],
             },
           ]}
@@ -158,7 +158,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 5 * scale,
               height: 4 * scale,
               top: 9 * scale,
-              right: 6 * scale,
+              right: 8 * scale,
               borderTopWidth: 1.5 * scale,
               borderRadius: 3.5 * scale,
             },
@@ -172,7 +172,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 5 * scale,
               height: 1.5 * scale,
               top: 11 * scale,
-              right: 7 * scale,
+              right: 8 * scale,
             },
           ]}
         />
@@ -184,7 +184,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 5 * scale,
               height: 1.5 * scale,
               top: 11 * scale,
-              right: 6 * scale,
+              right: 8 * scale,
               transform: [{ rotate: '-45deg' }],
             },
           ]}
@@ -192,12 +192,14 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
       ) : expr === 'wink' ? (
         <View
           style={[
-            styles.sleepyEye,
+            styles.happyClosedEye,
             {
               width: 5 * scale,
-              height: 1.5 * scale,
-              top: 12 * scale,
-              right: 7 * scale,
+              height: 4 * scale,
+              top: 9 * scale,
+              right: 8 * scale,
+              borderTopWidth: 1.5 * scale,
+              borderRadius: 3.5 * scale,
             },
           ]}
         />
@@ -210,7 +212,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 3 * scale,
               height: 4 * scale,
               top: 11 * scale,
-              right: 8 * scale,
+              right: 9 * scale,
               borderRadius: 2 * scale,
             },
           ]}
@@ -226,7 +228,7 @@ export function MoodFace({ mood, size = 31 }: { mood: DreamMood; size?: number }
               width: 14 * scale,
               height: 8 * scale,
               bottom: 7 * scale,
-              left: 10 * scale,
+              left: 8.5 * scale,
               borderBottomWidth: 2 * scale,
               borderRadius: 7 * scale,
             },
@@ -337,7 +339,6 @@ const styles = StyleSheet.create({
   smileMouth: {
     borderBottomColor: '#2b2359',
     position: 'absolute',
-    transform: [{ rotate: '20deg' }],
   },
   lineMouth: {
     backgroundColor: '#2b2359',

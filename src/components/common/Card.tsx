@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, ViewStyle, StyleProp } from 'react-native';
 import { theme } from '../../theme';
+import { useTheme } from '../../context/ThemeContext';
 
 type CardProps = {
   children: React.ReactNode;
@@ -19,10 +20,12 @@ export function Card({
   shadow = true,
   border = false,
 }: CardProps) {
+  const { isDark } = useTheme();
   return (
     <View
       style={[
         styles.card,
+        { backgroundColor: isDark ? '#201a39' : theme.colors.cardSurface },
         shadow && theme.shadows.card,
         border && styles.border,
         { padding, borderRadius },
@@ -36,7 +39,6 @@ export function Card({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: theme.colors.bgWhite,
     alignSelf: 'center',
   },
   border: {

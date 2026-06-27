@@ -21,6 +21,7 @@ export type RecentDream = {
   tags: DreamTag[];
   isFavorite: boolean;
   date?: string;
+  mode?: DreamModeId;
 };
 
 export type MonthlyDreamSummary = {

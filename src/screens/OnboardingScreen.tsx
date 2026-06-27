@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -9,7 +9,10 @@ import {
   Text,
   useWindowDimensions,
   View,
+  Alert,
+  TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ONBOARDING_PAGES, type SourceRect } from '../data/onboarding';
 import { theme } from '../theme';
@@ -17,7 +20,7 @@ import { theme } from '../theme';
 type CompletionSource = 'next' | 'skip';
 
 type OnboardingScreenProps = {
-  onComplete?: (source: CompletionSource) => void;
+  onComplete?: (source: CompletionSource, nickname?: string) => void;
 };
 
 const TRANSITION_DURATION_MS = 180;
@@ -73,10 +76,21 @@ const getPageLayout = (
 export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const [pageIndex, setPageIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [nickname, setNickname] = useState('');
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const { width, height } = useWindowDimensions();
   const page = ONBOARDING_PAGES[pageIndex];
   const isLastPage = pageIndex === ONBOARDING_PAGES.length - 1;
+
+  useEffect(() => {
+    AsyncStorage.getItem('@dreamlog_user_name')
+      .then((storedName) => {
+        if (storedName?.trim()) {
+          setNickname(storedName.trim());
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const layouts = useMemo(() => {
     return ONBOARDING_PAGES.map((p) => getPageLayout(p, width, height));
@@ -129,13 +143,23 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
     });
   };
 
-  const goNext = () => {
+  const goNext = async () => {
     if (isTransitioning) {
       return;
     }
 
     if (isLastPage) {
-      onComplete?.('next');
+      const trimmed = nickname.trim();
+      if (!trimmed) {
+        Alert.alert('이름 입력', '꿈로그에서 부를 이름을 입력해주세요!');
+        return;
+      }
+      try {
+        await AsyncStorage.setItem('@dreamlog_user_name', trimmed);
+      } catch (e) {
+        console.error('Failed to save nickname during onboarding:', e);
+      }
+      onComplete?.('next', trimmed);
       return;
     }
 
@@ -143,7 +167,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   };
 
   const skip = () => {
-    onComplete?.('skip');
+    onComplete?.('skip', nickname.trim() || undefined);
   };
 
   return (
@@ -242,6 +266,33 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
       >
         <Text style={styles.srOnly}>{page.completionLabel}</Text>
       </Pressable>
+      {pageIndex === 3 && (
+        <View
+          style={[
+            styles.inputContainer,
+            {
+              bottom: Math.max(142, height * 0.17),
+              left: Math.max(24, (width - Math.min(330, width - 48)) / 2),
+              width: Math.min(330, width - 48),
+              zIndex: 40,
+            },
+          ]}
+        >
+          <Text style={styles.inputLabel}>꿈로그에서 부를 이름</Text>
+          <TextInput
+            style={styles.nicknameInput}
+            placeholder="이름을 입력해주세요"
+            placeholderTextColor="#8a82ad"
+            value={nickname}
+            onChangeText={setNickname}
+            maxLength={10}
+            returnKeyType="done"
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={() => void goNext()}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -294,5 +345,38 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
     width: 1,
+  },
+  inputContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#CFC5FF',
+    minHeight: 66,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    position: 'absolute',
+    shadowColor: '#8B7DFF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 4,
+  },
+  nicknameInput: {
+    color: '#2d237a',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '500',
+    textAlign: 'left',
+    paddingHorizontal: 0,
+    paddingVertical: 2,
+    fontFamily: theme.typography.fontFamily,
+  },
+  inputLabel: {
+    color: '#6B5EB8',
+    fontFamily: theme.typography.displayFontFamily,
+    fontSize: 11,
+    letterSpacing: 0.2,
+    marginBottom: 1,
   },
 });

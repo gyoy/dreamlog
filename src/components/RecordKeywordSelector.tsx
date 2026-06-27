@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import type { DreamKeyword } from '../types/record';
+import { theme } from '../theme';
 
 type RecordKeywordSelectorProps = {
   extraKeywords: DreamKeyword[];
@@ -22,6 +23,7 @@ type RecordKeywordSelectorProps = {
   onToggleMore: () => void;
   showMore: boolean;
   onFocus?: () => void;
+  sectionLabel?: string;
 };
 
 type KeywordChipProps = {
@@ -115,6 +117,7 @@ export const RecordKeywordSelector = memo(function RecordKeywordSelector({
   onToggleMore,
   showMore,
   onFocus,
+  sectionLabel = '떠오른 키워드',
 }: RecordKeywordSelectorProps) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [newKeywordText, setNewKeywordText] = useState('');
@@ -131,9 +134,10 @@ export const RecordKeywordSelector = memo(function RecordKeywordSelector({
 
   return (
     <View style={styles.card}>
+      <Text style={styles.eyebrow}>{sectionLabel}</Text>
       <View style={styles.headerRow}>
         <View style={styles.titleWithEdit}>
-          <Text style={styles.title}>떠오른 키워드를 선택해주세요.</Text>
+          <Text style={styles.title}>이 꿈에서 떠오르는 키워드를 골라주세요.</Text>
           <Pressable
             onPress={() => setIsEditMode(!isEditMode)}
             hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}
@@ -209,23 +213,48 @@ export const RecordKeywordSelector = memo(function RecordKeywordSelector({
 const styles = StyleSheet.create({
   card: {
     alignSelf: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#F9F7FE',
+    borderWidth: 0,
     borderRadius: 15,
-    paddingBottom: 21,
-    paddingHorizontal: 13,
-    paddingTop: 5,
-    shadowColor: '#6f4be8',
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 9,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    ...Platform.select({
+      web: {
+          boxShadow:
+            '0px 10px 24px rgba(139,125,255,0.12), inset 0px 2px 4px rgba(139,125,255,0.07)',
+        } as never,
+      default: {
+        shadowColor: '#8B7DFF',
+        shadowOffset: { height: 10, width: 0 },
+        shadowOpacity: 0.12,
+        shadowRadius: 24,
+        elevation: 5,
+      },
+    }),
     width: 339,
+  },
+  eyebrow: {
+    alignSelf: 'flex-start',
+    color: '#6C5CC8',
+    fontFamily: 'Pretendard-SemiBold',
+    fontSize: 10,
+    fontWeight: '600',
+    includeFontPadding: false,
+    lineHeight: 14,
+    letterSpacing: 0.18,
+    marginBottom: 8,
+    backgroundColor: '#EEE8FF',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
   },
   headerRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 3,
-    paddingHorizontal: 3,
+    marginBottom: 10,
   },
   titleWithEdit: {
     flexDirection: 'row',
@@ -233,14 +262,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: '#2d237a',
-    fontSize: 13,
+    color: '#31267F',
+    fontFamily: theme.typography.displayFontFamily,
+    fontSize: 15,
     fontWeight: '700',
     includeFontPadding: false,
-    lineHeight: 38,
-    textShadowColor: 'rgba(111, 75, 232, 0.1)',
-    textShadowOffset: { height: 3, width: 0 },
-    textShadowRadius: 8,
+    lineHeight: 22,
   },
   editToggleBtn: {
     marginLeft: 8,
@@ -285,9 +312,7 @@ const styles = StyleSheet.create({
   chip: {
     alignItems: 'center',
     backgroundColor: '#f6f3ff',
-    borderColor: '#e3dcff',
     borderRadius: 12,
-    borderWidth: 1,
     height: 34,
     justifyContent: 'center',
     width: 54,
@@ -299,7 +324,6 @@ const styles = StyleSheet.create({
   },
   chipSelected: {
     backgroundColor: '#7b61ff',
-    borderColor: '#7b61ff',
     shadowColor: '#7b61ff',
     shadowOffset: { height: 4, width: 0 },
     shadowOpacity: 0.26,
@@ -349,9 +373,7 @@ const styles = StyleSheet.create({
   addInput: {
     flex: 1,
     backgroundColor: '#f8f6ff',
-    borderColor: '#d9ccff',
     borderRadius: 10,
-    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 7,
     color: '#2d237a',
@@ -377,9 +399,7 @@ const styles = StyleSheet.create({
   moreButton: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderColor: '#e6dfff',
     borderRadius: 8,
-    borderWidth: 1,
     height: 37,
     justifyContent: 'center',
     marginTop: 15,

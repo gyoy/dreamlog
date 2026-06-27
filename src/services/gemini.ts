@@ -74,9 +74,10 @@ export async function analyzeDream(dreamText: string, userId: string = 'dev-user
   const model = genAI.getGenerativeModel({
     model: DEFAULT_MODEL,
     systemInstruction: 
-      '당신은 따뜻하고 공감 능력이 뛰어난 전문 꿈 분석가이자 심리 상담사입니다. ' +
+      '당신은 따뜻하고 공감 능력이 뛰어난 꿈 기록 리플렉션 도우미입니다. ' +
       '사용자가 기록한 꿈의 내용을 읽고, 분석 결과는 반드시 제공된 JSON 스키마 형식에 맞추어 한국어로 답변해주세요. ' +
-      '해석(interpretation)은 사용자에게 따뜻한 조언과 심리학적 격려를 건네는 어조로 작성해야 합니다.',
+      '해석(interpretation)은 의료적 진단이나 치료 조언이 아니라 자기이해를 돕는 참고용 문장으로 작성해야 합니다. ' +
+      '단정적 판단을 피하고, 사용자가 스스로 감정과 생각을 돌아볼 수 있도록 부드럽고 조심스러운 어조를 유지하세요.',
   });
 
   const analysisSchema: Schema = {

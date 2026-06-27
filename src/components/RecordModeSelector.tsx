@@ -16,6 +16,7 @@ type RecordModeSelectorProps = {
   mode: RecordModeId;
   options: RecordModeOption[];
   onChange: (mode: RecordModeId) => void;
+  onDetailPress?: (mode: RecordModeId) => void;
 };
 
 const selectedBackground = require('../../assets/record/mode-selected-background.png');
@@ -30,6 +31,7 @@ export const RecordModeSelector = memo(function RecordModeSelector({
   mode,
   options,
   onChange,
+  onDetailPress,
 }: RecordModeSelectorProps) {
   const modeAnim = useRef(new Animated.Value(mode === 'planet' ? 0 : 1)).current;
 
@@ -102,7 +104,10 @@ export const RecordModeSelector = memo(function RecordModeSelector({
           accessibilityLabel={option.accessibilityLabel}
           accessibilityRole="button"
           accessibilityState={{ selected: isSelected }}
-          onPress={() => onChange(id)}
+          onPress={() => {
+            onChange(id);
+            onDetailPress?.(id);
+          }}
           style={({ pressed }) => [
             styles.modePressable,
             Platform.OS === 'web' ? styles.webNoOutline : null,
@@ -177,10 +182,16 @@ export const RecordModeSelector = memo(function RecordModeSelector({
         <Text style={styles.arrowText}>◀</Text>
       </Animated.View>
 
-      <Animated.Text style={[styles.helperText, { left: 0, opacity: planetProgress }]}>
+      <Animated.Text
+        numberOfLines={1}
+        style={[styles.helperText, { left: 0, opacity: planetProgress }]}
+      >
         {planetOption.helperText}
       </Animated.Text>
-      <Animated.Text style={[styles.helperText, { left: 177, opacity: constellationProgress }]}>
+      <Animated.Text
+        numberOfLines={1}
+        style={[styles.helperText, { left: 0, opacity: constellationProgress }]}
+      >
         {constellationOption.helperText}
       </Animated.Text>
     </View>
@@ -217,7 +228,8 @@ const styles = StyleSheet.create({
   },
   modeLabel: {
     fontSize: theme.typography.sizes.labelMedium, // 12
-    fontWeight: theme.typography.weights.semibold, // '600'
+    fontFamily: theme.typography.displayFontFamily,
+    fontWeight: '400',
     includeFontPadding: false,
     lineHeight: 17,
     position: 'absolute',
@@ -242,15 +254,16 @@ const styles = StyleSheet.create({
   helperText: {
     top: 70,
     color: theme.colors.textHelper, // #756fa5
-    fontSize: theme.typography.sizes.caption, // 10
-    fontWeight: '300',
+    fontSize: 12,
+    fontWeight: '400',
+    fontFamily: 'Pretendard',
     includeFontPadding: false,
     lineHeight: 18,
     position: 'absolute',
     textShadowColor: 'rgba(111, 75, 232, 0.1)',
     textShadowOffset: { height: 3, width: 0 },
     textShadowRadius: 8,
-    width: 160,
+    width: MODE_AREA_WIDTH,
     textAlign: 'center',
   },
   pressed: {

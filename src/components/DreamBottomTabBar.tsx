@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { HOME_DATA } from '../data/home';
 import { theme } from '../theme';
 import type { HomeTabId } from '../types/home';
+import { useTheme } from '../context/ThemeContext';
 
 type DreamBottomTabBarProps = {
   activeTab: HomeTabId;
@@ -15,10 +16,6 @@ type DreamBottomTabBarProps = {
 };
 
 const tabBarBackground = require('../../assets/record/bottom-tab-background-clean.png');
-const homeBackgroundSource = Platform.select({
-  default: require('../../assets/home/home-background.png'),
-  web: require('../../assets/home/home-background-web.png'),
-});
 
 const TAB_FRAME_WIDTH = 417;
 const TAB_FRAME_HEIGHT = 119;
@@ -57,7 +54,8 @@ export function DreamBottomTabBar({
   hideBackground = false,
   isHomeScreen = false,
 }: DreamBottomTabBarProps) {
-  const frameWidth = Math.min(width + 24, TAB_FRAME_WIDTH);
+  const { scaledFontSize } = useTheme();
+  const frameWidth = Math.min(width, TAB_FRAME_WIDTH);
   const scale = frameWidth / TAB_FRAME_WIDTH;
   const tabs = HOME_DATA.tabs;
 
@@ -75,24 +73,17 @@ export function DreamBottomTabBar({
     }).start();
   }, [tabIndex]);
 
-  const screenScale = width / 393;
-  const wrapperOffset = (width - frameWidth) / 2;
   const INDICATOR_WIDTH = 20;
+  const tabRowLeft = 12 * scale;
+  const tabRowWidth = frameWidth - 24 * scale;
+  const tabCenter = (index: number) =>
+    tabRowLeft + ((index + 0.5) * tabRowWidth) / 5 - INDICATOR_WIDTH / 2;
 
   // X축 translateX 연동 (디자인 좌표 기준 기기 너비별 정밀 센터 매칭)
   const translateX = slideAnim.interpolate({
     inputRange: [0, 1, 2, 3, 4],
-    outputRange: [
-      52 * screenScale - wrapperOffset - INDICATOR_WIDTH / 2,
-      124 * screenScale - wrapperOffset - INDICATOR_WIDTH / 2,
-      196 * screenScale - wrapperOffset - INDICATOR_WIDTH / 2,
-      268 * screenScale - wrapperOffset - INDICATOR_WIDTH / 2,
-      340 * screenScale - wrapperOffset - INDICATOR_WIDTH / 2,
-    ],
+    outputRange: [0, 1, 2, 3, 4].map(tabCenter),
   });
-
-  const layoutScale = width / 393;
-  const bgHeight = 852 * layoutScale;
 
   return (
     <View
@@ -106,55 +97,35 @@ export function DreamBottomTabBar({
       ]}
     >
       {!hideBackground && (
-        isHomeScreen ? (
-          <View
-            pointerEvents="none"
+        <View
+          pointerEvents="none"
+          style={[
+            styles.background,
+            {
+              height: TAB_IMAGE_HEIGHT * scale,
+              top: TAB_IMAGE_TOP * scale,
+              width: TAB_FRAME_WIDTH * scale,
+            },
+          ]}
+        >
+          <Image
+            accessibilityIgnoresInvertColors
+            accessible={false}
+            resizeMode="stretch"
+            source={tabBarBackground}
             style={[
-              styles.backgroundContainer,
               {
-                height: TAB_FRAME_HEIGHT * scale,
-                width: frameWidth,
-              },
-            ]}
-          >
-            <Image
-              accessibilityIgnoresInvertColors
-              accessible={false}
-              resizeMode="cover"
-              source={homeBackgroundSource}
-              style={{
-                position: 'absolute',
-                width: width,
-                height: bgHeight,
-                left: -wrapperOffset,
-                bottom: 0,
-              }}
-            />
-          </View>
-        ) : (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.background,
-              {
-                height: TAB_IMAGE_HEIGHT * scale,
-                top: TAB_IMAGE_TOP * scale,
-                width: TAB_FRAME_WIDTH * scale,
-              },
-            ]}
-          >
-            <Image
-              accessibilityIgnoresInvertColors
-              accessible={false}
-              resizeMode="stretch"
-              source={tabBarBackground}
-              style={{
                 width: '100%',
                 height: '100%',
-              }}
-            />
-          </View>
-        )
+              },
+              Platform.select({
+                web: {
+                  imageRendering: '-webkit-optimize-contrast',
+                } as any,
+              }),
+            ]}
+          />
+        </View>
       )}
       {/* 슬라이딩 활성 탭 인디케이터 (wrapper 기준 오프셋을 사용하여 배경 아이콘 센터와 정밀 동기화) */}
       <Animated.View
@@ -169,8 +140,8 @@ export function DreamBottomTabBar({
       <View style={styles.hitRow}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
-          const activeColor = '#7558f7';
-          const inactiveColor = '#8a82ad';
+          const activeColor = '#7C67E8';
+          const inactiveColor = '#898398';
           return (
             <Pressable
               accessibilityLabel={`${tab.label} 탭${isActive ? ', 선택됨' : ''}`}
@@ -191,7 +162,13 @@ export function DreamBottomTabBar({
                   size={21}
                   color={isActive ? activeColor : inactiveColor}
                 />
-                <Text style={[styles.tabLabel, { color: isActive ? activeColor : inactiveColor }]}>
+                <Text style={[
+                  styles.tabLabel,
+                  {
+                    color: isActive ? activeColor : inactiveColor,
+                    fontSize: scaledFontSize(10),
+                  },
+                ]}>
                   {tab.label}
                 </Text>
               </View>
@@ -206,7 +183,9 @@ export function DreamBottomTabBar({
 const styles = StyleSheet.create({
   wrapper: {
     alignSelf: 'center',
+    alignItems: 'center',
     overflow: 'visible',
+    width: '100%',
   },
   background: {
     left: 0,
@@ -224,9 +203,9 @@ const styles = StyleSheet.create({
     bottom: 12,
     flexDirection: 'row',
     height: 74,
-    left: 16,
+    left: 12,
     position: 'absolute',
-    right: 16,
+    right: 12,
   },
   tabHitArea: {
     flex: 1,
@@ -235,14 +214,14 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
   indicator: {
-    backgroundColor: '#7558f7',
+    backgroundColor: '#7C67E8',
     borderRadius: 999,
     height: 4.5,
     width: 20,
     position: 'absolute',
     bottom: 16,
     left: 0,
-    shadowColor: '#7558f7',
+    shadowColor: '#7C67E8',
     shadowOffset: { height: 1.5, width: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 3,

@@ -19,6 +19,7 @@ type RecordMoodSelectorProps = {
   selectedMoodIds: DreamMoodId[];
   onAddMood: (mood: DreamMood) => void;
   onDeleteMood: (moodId: DreamMoodId) => void;
+  sectionLabel?: string;
 };
 
 type MoodCardProps = {
@@ -86,7 +87,6 @@ const MoodCard = memo(function MoodCard({
         style={({ pressed }) => [
           styles.moodCard,
           selected && styles.moodCardSelected,
-          selected && { borderColor: mood.faceColor },
           selected && Platform.OS !== 'web' && { shadowColor: mood.faceColor },
           Platform.OS === 'web' ? styles.webNoOutline : null,
           pressed && styles.pressed,
@@ -110,15 +110,17 @@ export const RecordMoodSelector = memo(function RecordMoodSelector({
   selectedMoodIds,
   onAddMood,
   onDeleteMood,
+  sectionLabel = '꿈의 감정',
 }: RecordMoodSelectorProps) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
   return (
     <View style={styles.container}>
+      <Text style={styles.eyebrow}>{sectionLabel}</Text>
       <View style={styles.titleRow}>
         <View style={styles.titleWithEdit}>
-          <Text style={styles.title}>감정을 선택해주세요</Text>
+          <Text style={styles.title}>이 꿈에서 느낀 감정을 선택해주세요.</Text>
           <Pressable
             onPress={() => setIsEditMode(!isEditMode)}
             hitSlop={{ top: 8, bottom: 8, left: 10, right: 10 }}
@@ -183,11 +185,27 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: 339,
   },
+  eyebrow: {
+    alignSelf: 'flex-start',
+    color: '#6C5CC8',
+    fontFamily: 'Pretendard-SemiBold',
+    fontSize: 10,
+    fontWeight: '600',
+    includeFontPadding: false,
+    lineHeight: 14,
+    letterSpacing: 0.18,
+    marginBottom: 8,
+    backgroundColor: '#EEE8FF',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
   },
   titleWithEdit: {
     flexDirection: 'row',
@@ -195,10 +213,11 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.memoTitle,
-    fontSize: theme.typography.sizes.bodySmall, // 13
+    fontFamily: theme.typography.displayFontFamily,
+    fontSize: 15,
     fontWeight: '700',
     includeFontPadding: false,
-    lineHeight: 17,
+    lineHeight: 22,
   },
   editToggleBtn: {
     marginLeft: 8,
@@ -233,17 +252,21 @@ const styles = StyleSheet.create({
   },
   moodCard: {
     alignItems: 'center',
-    backgroundColor: theme.colors.bgWhite,
-    borderColor: theme.colors.primaryBorder,
+    backgroundColor: theme.colors.cardSurface,
     borderRadius: theme.radius.md, // 12
-    borderWidth: 1,
+    borderWidth: 0,
     height: 61,
+    shadowColor: '#8B7DFF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 3,
     justifyContent: 'flex-start',
     width: 57,
     position: 'relative',
   },
   moodCardSelected: {
-    borderWidth: 2,
+    backgroundColor: '#F4F0FF',
     shadowOffset: { height: 5, width: 0 },
     shadowOpacity: 0.22,
     shadowRadius: 8,

@@ -12,15 +12,15 @@ export const RECORD_LIMITS = {
 export const RECORD_MODE_OPTIONS: RecordModeOption[] = [
   {
     id: 'planet',
-    label: '행성계 모드',
-    helperText: '내 꿈으로 나만의 행성계를 만들어요.',
-    accessibilityLabel: '행성계 모드 선택',
+    label: '행성 수집',
+    helperText: '꿈을 기록할 때마다 새로운 행성을 하나씩 모아요.',
+    accessibilityLabel: '행성 수집 모드 선택',
   },
   {
     id: 'constellation',
-    label: '별자리 모드',
-    helperText: '내 꿈으로 나만의 별자리를 만들어요.',
-    accessibilityLabel: '별자리 모드 선택',
+    label: '별자리 기록',
+    helperText: '이번 달 별자리의 황금빛 점을 꿈으로 채워가요.',
+    accessibilityLabel: '별자리 기록 모드 선택',
   },
 ];
 
@@ -53,9 +53,9 @@ export const RECORD_EXTRA_KEYWORDS: DreamKeyword[] = [
 ];
 
 export const RECORD_MOODS: DreamMood[] = [
-  { id: 'happy', label: '행복', faceColor: '#ffd66b', expression: 'smile' },
+  { id: 'happy', label: '행복', faceColor: '#ffd66b', expression: 'excited' },
   { id: 'calm', label: '평온', faceColor: '#94ddd0', expression: 'line' },
-  { id: 'curious', label: '신기함', faceColor: '#ffd56e', expression: 'open' },
+  { id: 'angry', label: '화남', faceColor: '#ff7b7b', expression: 'angry' },
   { id: 'fear', label: '두려움', faceColor: '#ff8588', expression: 'fear' },
   { id: 'sad', label: '슬픔', faceColor: '#9ec4f7', expression: 'sad' },
 ];

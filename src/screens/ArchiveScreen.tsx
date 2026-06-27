@@ -165,8 +165,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 24,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(226, 218, 255, 0.72)',
     shadowColor: '#6f4be8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
@@ -181,8 +179,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e2daff',
   },
   iconEmoji: {
     fontSize: 32,
@@ -210,8 +206,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#f0ecfc',
   },
   mockupLabel: {
     color: theme.colors.textMuted,
@@ -235,14 +229,11 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 6,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#f0ecfc',
     alignItems: 'center',
     justifyContent: 'center',
   },
   mockCellActive: {
-    backgroundColor: 'rgba(144, 126, 255, 0.1)',
-    borderColor: theme.colors.primary,
+    backgroundColor: 'rgba(144, 126, 255, 0.15)',
   },
   mockCellText: {
     fontSize: 10,
@@ -267,8 +258,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 10,
     padding: 10,
-    borderWidth: 1,
-    borderColor: '#f0ecfc',
   },
   mockItem: {
     flexDirection: 'row',
@@ -279,8 +268,6 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     backgroundColor: '#f5f2ff',
-    borderWidth: 1,
-    borderColor: '#ded7ff',
     marginRight: 10,
   },
   mockItemLines: {

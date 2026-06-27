@@ -20,8 +20,18 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { getSavedDreams } from '../utils/dreamStorage';
-import { RECORD_PRIMARY_KEYWORDS, RECORD_EXTRA_KEYWORDS } from '../data/record';
+import { getSavedDreams, deleteDream, saveDream } from '../utils/dreamStorage';
+import { RECORD_PRIMARY_KEYWORDS, RECORD_EXTRA_KEYWORDS, RECORD_MOODS } from '../data/record';
+import type { SavedDream } from '../types/record';
+import { MoodFace } from '../components/MoodFace';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  clearAllNotifications,
+  syncDynamicNotifications,
+} from '../utils/notificationStorage';
 import {
   HOME_DATA,
   HOME_DESIGN_HEIGHT,
@@ -38,12 +48,17 @@ import type {
   RecentDream,
 } from '../types/home';
 import { analyzeDream, type DreamAnalysisResult } from '../services/gemini';
+import { useTheme } from '../context/ThemeContext';
+import { MONTHLY_CONSTELLATIONS, RESERVE_CONSTELLATIONS } from '../data/constellations';
 
 type HomeScreenProps = {
   active?: boolean;
   data?: HomeData;
+  refreshTrigger?: number;
+  userName?: string;
+  onProfilePress?: () => void;
   onNotificationPress?: () => void;
-  onRecordPress?: () => void;
+  onRecordPress?: (preselectedDate?: string, dreamId?: string) => void;
   onSummaryPress?: () => void;
   onDreamModePress?: (mode: HomeDreamMode) => void;
   onPlanetModePress?: () => void;
@@ -53,16 +68,55 @@ type HomeScreenProps = {
   onTabPress?: (tabId: HomeTabId) => void;
 };
 
-const homeBackgroundSource = Platform.select({
-  default: require('../../assets/home/home-background.png'),
-  web: require('../../assets/home/home-background-web.png'),
-});
+const homeAvatarSource = require('../../assets/home/rebuilt/avatar-image.png');
+const homeMoonSource = require('../../assets/home/rebuilt/moon-status-illustration.png');
+const homeNotificationSource = require('../../assets/home/rebuilt/notification-icon.png');
+const homeBookSource = require('../../assets/home/rebuilt/book-pencil-illustration.png');
+const homeButtonSource = require('../../assets/home/rebuilt/button-background.png');
+const homeButtonPencilSource = require('../../assets/home/rebuilt/button-pencil-icon.png');
+const homeCloudSource = require('../../assets/home/rebuilt/cloud-illustration.png');
+const homePurpleStarSource = require('../../assets/home/rebuilt/decor-purple-star.png');
+const homeYellowStarSource = require('../../assets/home/rebuilt/decor-yellow-star.png');
+const homeHeroConstellationSource = require('../../assets/home/rebuilt/hero-constellation-lines.png');
+const homeConstellationModeSource = require('../../assets/home/rebuilt/home-constellation-mode-v2.png');
+const dreamlogWordmarkSource = require('../../assets/brand/dreamlog-wordmark.png');
+const CONSTELLATION_GUIDES = [
+  require('../../assets/constellation-guides-premium/01-capricorn.png'),
+  require('../../assets/constellation-guides-premium/02-aquarius.png'),
+  require('../../assets/constellation-guides-premium/03-pisces.png'),
+  require('../../assets/constellation-guides-premium/04-aries.png'),
+  require('../../assets/constellation-guides-premium/05-taurus.png'),
+  require('../../assets/constellation-guides-premium/06-gemini.png'),
+  require('../../assets/constellation-guides-premium/07-cancer.png'),
+  require('../../assets/constellation-guides-premium/08-leo.png'),
+  require('../../assets/constellation-guides-premium/09-virgo.png'),
+  require('../../assets/constellation-guides-premium/10-libra.png'),
+  require('../../assets/constellation-guides-premium/11-scorpio.png'),
+  require('../../assets/constellation-guides-premium/12-sagittarius.png'),
+] as const;
+const RESERVE_GUIDES = [
+  require('../../assets/constellation-guides-premium/13-cassiopeia.png'),
+  require('../../assets/constellation-guides-premium/14-cygnus.png'),
+  require('../../assets/constellation-guides-premium/15-pegasus.png'),
+  require('../../assets/constellation-guides-premium/16-andromeda.png'),
+  require('../../assets/constellation-guides-premium/17-orion.png'),
+  require('../../assets/constellation-guides-premium/18-lyra.png'),
+] as const;
+const MONTH_LABELS = [
+  '1월', '2월', '3월', '4월', '5월', '6월',
+  '7월', '8월', '9월', '10월', '11월', '12월',
+];
+const CONSTELLATION_COLLECTION_KEY = '@dreamlog_constellation_collection_v1';
 
 // ─── 애니메이션 상수 ────────────────────────────────────────────────────────
 const EASE_OUT_QUINT  = Easing.bezier(0.22, 1.0, 0.36, 1.0);
 const EASE_IN_OUT_CUBIC = Easing.bezier(0.65, 0.0, 0.35, 1.0);
 const EASE_OUT_BACK   = Easing.bezier(0.34, 1.26, 0.64, 1.0);
 const noop = () => {};
+
+const HOME_BACKGROUND_WIDTH = 393;
+const HOME_BACKGROUND_HEIGHT = 852;
+const HOME_FRAME_PADDING = 0;
 
 const getScreenLayout = (width: number, height: number) => {
   const scale = Math.min(width / HOME_DESIGN_WIDTH, height / HOME_DESIGN_HEIGHT);
@@ -101,7 +155,7 @@ const getFallbackMode = (modeId: DreamModeId): HomeDreamMode => {
       ctaLabel: '상세보기',
       description: '키워드와 감정의 흐름을 별자리처럼 연결해보세요.',
       id: 'constellation',
-      title: '별자리 모드',
+      title: '별자리 기록',
     };
   }
 
@@ -109,7 +163,7 @@ const getFallbackMode = (modeId: DreamModeId): HomeDreamMode => {
     ctaLabel: '상세보기',
     description: '별이 연결된 나만의 꿈 우주를 확인해보세요.',
     id: 'planet',
-    title: '행성계 모드',
+    title: '행성 수집',
   };
 };
 
@@ -122,6 +176,9 @@ const getKeywordLabel = (id: string) => {
 export function HomeScreen({
   active,
   data = HOME_DATA,
+  refreshTrigger,
+  userName: propUserName,
+  onProfilePress = noop,
   onNotificationPress = noop,
   onRecordPress,
   onSummaryPress = noop,
@@ -132,43 +189,82 @@ export function HomeScreen({
   onFavoritePress = noop,
   onTabPress = noop,
 }: HomeScreenProps) {
-  const { height, width } = useWindowDimensions();
+  console.log('[HomeScreen] Render active:', active);
+  const { textSize, isDark } = useTheme();
+  const fontScale = textSize === 'small' ? 1 : textSize === 'default' ? 1.15 : 1.26;
+  const { height: rawHeight, width: rawWidth } = useWindowDimensions();
+  const width = Math.min(rawWidth, 393);
+  const height = Math.min(rawHeight, 852);
   const entrance = useRef(new Animated.Value(0)).current;
+  const recordButtonPress = useRef(new Animated.Value(0)).current;
+  const moonFloat = useRef(new Animated.Value(0)).current;
+  const bookFloat = useRef(new Animated.Value(0)).current;
+  const cloudFloat = useRef(new Animated.Value(0)).current;
+  const modeFloat = useRef(new Animated.Value(0)).current;
 
   // DB 연동 및 동적 데이터 상태
   const [dreams, setDreams] = useState<any[]>([]);
   const [notificationCount, setNotificationCount] = useState(2);
+  const [userName, setUserName] = useState(propUserName || '꿈결님');
+  const [selectedDetailDream, setSelectedDetailDream] = useState<SavedDream | null>(null);
+  const [isNotificationModalVisible, setIsNotificationModalVisible] = useState(false);
+  const [isConstellationModalVisible, setIsConstellationModalVisible] = useState(false);
+  const [notificationsList, setNotificationsList] = useState<any[]>([]);
+  const [collectedMonths, setCollectedMonths] = useState<number[]>([]);
+  const [selectedConstellationMonth, setSelectedConstellationMonth] = useState(
+    new Date().getMonth() + 1,
+  );
 
   // 꿈 기록 로드 함수
   const loadDreams = async () => {
     try {
       const stored = await getSavedDreams();
       setDreams(stored);
+      await loadNotifications(stored);
     } catch (e) {
       console.error('Failed to load dreams on HomeScreen:', e);
     }
   };
 
-  // 알림 개수 로드 함수
-  const loadNotificationCount = async () => {
+  // 알림 목록 및 개수 로드/동기화 함수
+  const loadNotifications = async (currentDreamsList?: any[]) => {
     try {
-      const stored = await AsyncStorage.getItem('@dreamlog_notification_count');
-      if (stored !== null) {
-        setNotificationCount(parseInt(stored, 10));
+      const targetDreams = currentDreamsList || dreams;
+      const unreadCount = await syncDynamicNotifications(targetDreams);
+      setNotificationCount(unreadCount);
+      const list = await getNotifications();
+      setNotificationsList(list);
+    } catch (e) {
+      console.error('Failed to load notifications:', e);
+    }
+  };
+
+  // 닉네임 로드 함수
+  const loadUserName = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('@dreamlog_user_name');
+      if (stored !== null && stored.trim() !== '') {
+        setUserName(stored.trim());
       } else {
-        setNotificationCount(2); // default
+        setUserName('꿈결님');
       }
     } catch (e) {
-      console.error('Failed to load notification count:', e);
+      console.error('Failed to load user name on HomeScreen:', e);
     }
   };
 
   useEffect(() => {
     if (active) {
       loadDreams();
-      loadNotificationCount();
+      loadUserName();
     }
-  }, [active]);
+  }, [active, refreshTrigger]);
+
+  useEffect(() => {
+    if (propUserName?.trim()) {
+      setUserName(propUserName.trim());
+    }
+  }, [propUserName]);
 
   // 이번 달 꿈 기록 통계 자동 계산
   const monthlySummary = useMemo(() => {
@@ -191,14 +287,14 @@ export function HomeScreen({
     };
   }, [dreams]);
 
-  // 최근 기록 동적 데이터 매핑 (가장 최근 2건 정렬하여 추출)
+  // 최근 기록 동적 데이터 매핑 (가장 최근 3건 정렬하여 추출)
   const recentDreamsList = useMemo(() => {
     const sorted = [...dreams].sort((a, b) => {
       const dateCompare = (b.date || '').localeCompare(a.date || '');
       if (dateCompare !== 0) return dateCompare;
       return (b.createdAt || '').localeCompare(a.createdAt || '');
     });
-    return sorted.slice(0, 2);
+    return sorted.slice(0, 3);
   }, [dreams]);
 
   const mappedRecentDreams = useMemo(() => {
@@ -224,6 +320,7 @@ export function HomeScreen({
         })),
         isFavorite: Boolean(d.isFavorite),
         date: d.date,
+        mode: d.mode,
       };
     });
   }, [recentDreamsList]);
@@ -251,30 +348,86 @@ export function HomeScreen({
     onFavoritePress?.(dream);
   };
 
-  // 알림 클릭 시 로컬 뱃지 소거 핸들러
-  const handleNotificationPressLocal = () => {
-    if (notificationCount > 0) {
-      Alert.alert(
-        '알림',
-        '새로운 알림을 모두 읽음 처리했습니다.',
-        [
-          {
-            text: '확인',
-            onPress: async () => {
-              setNotificationCount(0);
-              try {
-                await AsyncStorage.setItem('@dreamlog_notification_count', '0');
-              } catch (e) {
-                console.error('Failed to save notification count:', e);
-              }
-            },
+  // 최근 기록 클릭 핸들러 (상세 보기 모달 오픈)
+  const handleRecentDreamPressLocal = (dreamId: string) => {
+    const found = dreams.find((d) => d.id === dreamId);
+    if (found) {
+      setSelectedDetailDream(found);
+    }
+  };
+
+  // 최근 기록 상세 모달 - 수정 핸들러
+  const handleEditDreamLocal = (date: string, dreamId?: string) => {
+    setSelectedDetailDream(null);
+    if (onRecordPress) {
+      onRecordPress(date, dreamId);
+    }
+  };
+
+  // 최근 기록 상세 모달 - 삭제 핸들러
+  const handleDeleteDreamLocal = async (id: string) => {
+    Alert.alert(
+      '꿈 기록 삭제',
+      '이 꿈 기록을 은하수 보관함에서 영구히 삭제하시겠습니까?',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDream(id);
+              setSelectedDetailDream(null);
+              await loadDreams();
+            } catch (e) {
+              console.error('Failed to delete dream on HomeScreen:', e);
+            }
           },
-        ]
-      );
-    } else {
-      Alert.alert('알림', '새로운 알림이 없습니다.');
+        },
+      ]
+    );
+  };
+
+  // 알림 아이콘 클릭 핸들러 (실제 알림 모달 오픈)
+  const handleNotificationPressLocal = async () => {
+    try {
+      const list = await getNotifications();
+      setNotificationsList(list);
+      setIsNotificationModalVisible(true);
+    } catch (e) {
+      console.error('Failed to open notifications modal:', e);
     }
     onNotificationPress?.();
+  };
+
+  // 모든 알림 읽음 처리 핸들러
+  const handleMarkAllNotificationsAsRead = async () => {
+    try {
+      await markAllAsRead();
+      await loadNotifications();
+    } catch (e) {
+      console.error('Failed to mark all notifications as read:', e);
+    }
+  };
+
+  // 모든 알림 삭제 핸들러
+  const handleClearAllNotifications = async () => {
+    try {
+      await clearAllNotifications();
+      await loadNotifications();
+    } catch (e) {
+      console.error('Failed to clear notifications:', e);
+    }
+  };
+
+  // 특정 알림 읽음 처리 핸들러
+  const handleMarkSingleAsRead = async (id: string) => {
+    try {
+      await markAsRead(id);
+      await loadNotifications();
+    } catch (e) {
+      console.error('Failed to mark notification as read:', e);
+    }
   };
 
   // UI 상태 관리 States
@@ -294,11 +447,145 @@ export function HomeScreen({
   const errorProgress  = useRef(new Animated.Value(0)).current;
   const loopAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
-  const layout = useMemo(() => getScreenLayout(width, height), [height, width]);
+  const fullLayout = useMemo(() => {
+    const scale = Math.max(rawWidth / 393, rawHeight / 852);
+    const screenWidth = 393 * scale;
+    const screenHeight = 852 * scale;
+    const top = (rawHeight - screenHeight) / 2;
+    const left = (rawWidth - screenWidth) / 2;
+    return {
+      image: { width: screenWidth, height: screenHeight, left, top },
+      scale,
+    };
+  }, [rawWidth, rawHeight]);
+
+  const layout = useMemo(() => {
+    const offsetLeft = (rawWidth - width) / 2;
+    const offsetTop = (rawHeight - height) / 2;
+
+    const scale = Math.max(width / 393, height / 852);
+    const screenWidth = 393 * scale;
+    const screenHeight = 852 * scale;
+    const top = offsetTop + (height - screenHeight) / 2;
+    const left = offsetLeft + (width - screenWidth) / 2;
+    return {
+      image: { width: screenWidth, height: screenHeight, left, top },
+      scale,
+    };
+  }, [rawWidth, rawHeight, width, height]);
+  const textLayout = useMemo(() => {
+    if (textSize === 'large') {
+      return {
+        brandTop: 47,
+        heroTitleTop: 155,
+        heroBodyTop: 186,
+        heroButtonTop: 242,
+        cardTitleTop: 353,
+        summaryCountTop: 383,
+        summaryBodyTop: 390,
+        summaryCompareTop: 421,
+        summaryDeltaTop: 427,
+        cardButtonTop: 458,
+        constellationBodyTop: 391,
+        recentTitleTop: 523,
+        recentTitleWidth: 158,
+        recentRowTitleTop: 3,
+        recentRowTitleWidth: 154,
+        recentRowTagsTop: 28,
+        recentRowDateTop: 22,
+      };
+    }
+
+    if (textSize === 'small') {
+      return {
+        brandTop: 52,
+        heroTitleTop: 160,
+        heroBodyTop: 190,
+        heroButtonTop: 245,
+        cardTitleTop: 357,
+        summaryCountTop: 387,
+        summaryBodyTop: 393,
+        summaryCompareTop: 426,
+        summaryDeltaTop: 432,
+        cardButtonTop: 463,
+        constellationBodyTop: 398,
+        recentTitleTop: 527,
+        recentTitleWidth: 166,
+        recentRowTitleTop: 7,
+        recentRowTitleWidth: 174,
+        recentRowTagsTop: 29,
+        recentRowDateTop: 25,
+      };
+    }
+
+    return {
+      brandTop: 49,
+      heroTitleTop: 158,
+      heroBodyTop: 189,
+      heroButtonTop: 246,
+      cardTitleTop: 356,
+      summaryCountTop: 386,
+      summaryBodyTop: 393,
+      summaryCompareTop: 425,
+      summaryDeltaTop: 431,
+      cardButtonTop: 462,
+      constellationBodyTop: 395,
+      recentTitleTop: 525,
+      recentTitleWidth: 158,
+      recentRowTitleTop: 5,
+      recentRowTitleWidth: 164,
+      recentRowTagsTop: 29,
+      recentRowDateTop: 25,
+    };
+  }, [textSize]);
+  const cardTitleFontScale = fontScale;
   const primaryDreamMode = useMemo(
-    () => data.dreamModes.find((mode) => mode.id === 'planet') ?? data.dreamModes[0] ?? getFallbackMode('planet'),
+    () => data.dreamModes.find((mode) => mode.id === 'constellation') ?? data.dreamModes[0] ?? getFallbackMode('constellation'),
     [data.dreamModes],
   );
+  const dreamMonthsThisYear = useMemo(() => {
+    const year = new Date().getFullYear();
+    return Array.from(new Set(
+      dreams
+        .map((dream) => String(dream.date ?? ''))
+        .filter((date) => date.startsWith(`${year}-`))
+        .map((date) => Number(date.slice(5, 7)))
+        .filter((month) => month >= 1 && month <= 12),
+    )).sort((a, b) => a - b);
+  }, [dreams]);
+  const completedMonths = useMemo(() => new Set(collectedMonths), [collectedMonths]);
+  const selectedMonthDreams = useMemo(
+    () => dreams.filter((dream) => Number(String(dream.date ?? '').slice(5, 7)) === selectedConstellationMonth),
+    [dreams, selectedConstellationMonth],
+  );
+  const selectedGuide = MONTHLY_CONSTELLATIONS[selectedConstellationMonth - 1];
+
+  useEffect(() => {
+    const loadConstellationCollection = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(CONSTELLATION_COLLECTION_KEY);
+        const parsed = stored ? JSON.parse(stored) : [];
+        const persistedMonths = Array.isArray(parsed)
+          ? parsed.filter((month): month is number => Number.isInteger(month) && month >= 1 && month <= 12)
+          : [];
+        setCollectedMonths(
+          Array.from(new Set([...persistedMonths, ...dreamMonthsThisYear])).sort((a, b) => a - b),
+        );
+      } catch (error) {
+        console.error('Failed to load constellation collection:', error);
+        setCollectedMonths(dreamMonthsThisYear);
+      }
+    };
+
+    void loadConstellationCollection();
+  }, [dreamMonthsThisYear]);
+
+  useEffect(() => {
+    if (collectedMonths.length === 0) return;
+    AsyncStorage.setItem(CONSTELLATION_COLLECTION_KEY, JSON.stringify(collectedMonths)).catch(
+      (error) => console.error('Failed to save constellation collection:', error),
+    );
+  }, [collectedMonths]);
   const dreamModeAccessibilityLabel = useMemo(() => {
     const modeNames = data.dreamModes.map((mode) => mode.title).join(', ');
 
@@ -424,6 +711,32 @@ export function HomeScreen({
     }
   }, [errorModalVisible, errorProgress]);
 
+  useEffect(() => {
+    const makeLoop = (value: Animated.Value, duration: number, delay: number, output: [number, number]) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(value, {
+            toValue: 1,
+            duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(value, {
+            toValue: 0,
+            duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start();
+
+    makeLoop(moonFloat, 3200, 0, [0, -4]);
+    makeLoop(bookFloat, 3600, 120, [0, -6]);
+    makeLoop(cloudFloat, 2800, 220, [0, -3]);
+    makeLoop(modeFloat, 3400, 160, [0, -4]);
+  }, [bookFloat, cloudFloat, modeFloat, moonFloat]);
+
   // ─── 보간 스타일 계산 ──────────────────────────────────────────────────
   const animatedImageStyle = useMemo(
     () => ({
@@ -444,14 +757,17 @@ export function HomeScreen({
     mapRectToScreen(rect, layout.image.left, layout.image.top, layout.scale);
 
   const handleDreamModePress = () => {
-    if (onDreamModePress) {
-      onDreamModePress(primaryDreamMode);
-      return;
-    }
+    onRecordPress?.();
+  };
 
-    if (primaryDreamMode.id === 'planet') {
-      onPlanetModePress();
-    }
+  const animateRecordButton = (toValue: number) => {
+    Animated.spring(recordButtonPress, {
+      toValue,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 280,
+      mass: 0.55,
+    }).start();
   };
 
   const handleRecordCtaPress = () => {
@@ -487,6 +803,87 @@ export function HomeScreen({
       setErrorModalVisible(true);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveAnalysisResult = async () => {
+    if (!analysisResult) return;
+
+    try {
+      const storedKeywordsRaw = await AsyncStorage.getItem('@dreamlog_custom_all_keywords');
+      let currentAllKeywords = storedKeywordsRaw 
+        ? JSON.parse(storedKeywordsRaw) 
+        : [...RECORD_PRIMARY_KEYWORDS, ...RECORD_EXTRA_KEYWORDS];
+
+      const mappedKeywordIds: string[] = [];
+      for (const symbol of analysisResult.symbols) {
+        const found = currentAllKeywords.find((k: any) => k.label === symbol || k.id === symbol);
+        if (found) {
+          mappedKeywordIds.push(found.id);
+        } else {
+          const newId = `custom_kw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+          currentAllKeywords.push({ id: newId, label: symbol, isPrimary: true });
+          mappedKeywordIds.push(newId);
+        }
+      }
+      await AsyncStorage.setItem('@dreamlog_custom_all_keywords', JSON.stringify(currentAllKeywords));
+
+      let mappedMoodId = 'calm';
+      const emotionMap: Record<string, string> = {
+        '행복': 'happy', '기쁨': 'happy', '설렘': 'excited', '신남': 'excited',
+        '평온': 'calm', '평온함': 'calm', '차분함': 'calm',
+        '슬픔': 'sad', '우울': 'sad', '외로움': 'sad',
+        '두려움': 'scared', '무서움': 'scared', '불안': 'scared',
+        '분노': 'angry', '화남': 'angry', '짜증': 'angry',
+        '신기함': 'calm', '신비': 'calm', '신비로움': 'calm'
+      };
+      
+      const cleanEmotion = analysisResult.emotion.trim();
+      let matchedId = emotionMap[cleanEmotion];
+      if (!matchedId) {
+        const foundMood = RECORD_MOODS.find(m => cleanEmotion.includes(m.label) || m.label.includes(cleanEmotion));
+        if (foundMood) {
+          matchedId = foundMood.id;
+        }
+      }
+      if (matchedId) {
+        mappedMoodId = matchedId;
+      }
+
+      const payload = {
+        title: analysisResult.summary || '오늘의 꿈 분석',
+        mode: 'constellation' as const,
+        selectedStarId: 'gold' as const,
+        selectedKeywordIds: mappedKeywordIds,
+        selectedKeywords: mappedKeywordIds.map(id => currentAllKeywords.find((k: any) => k.id === id)).filter(Boolean),
+        selectedMoodIds: [mappedMoodId],
+        selectedMoods: RECORD_MOODS.filter(m => m.id === mappedMoodId),
+        memo: dreamText,
+      };
+
+      await saveDream(payload, undefined, undefined, analysisResult.interpretation);
+
+      const updatedDreams = await getSavedDreams();
+      setDreams(updatedDreams);
+
+      const { syncDynamicNotifications } = require('../utils/notificationStorage');
+      const unreadCount = await syncDynamicNotifications(updatedDreams);
+      setNotificationCount(unreadCount);
+
+      Animated.timing(resultProgress, {
+        toValue: 0,
+        duration: 200,
+        easing: EASE_IN_OUT_CUBIC,
+        useNativeDriver: true,
+      }).start(() => {
+        setAnalysisResult(null);
+        setDreamText('');
+      });
+
+      Alert.alert('저장 완료', '오늘의 꿈 우주 조각이 보관함에 안전하게 저장되었습니다.');
+    } catch (e) {
+      console.error('Failed to save AI analysis result dream:', e);
+      Alert.alert('저장 실패', '꿈 일기 저장에 실패했습니다. 다시 시도해 주세요.');
     }
   };
 
@@ -526,6 +923,14 @@ export function HomeScreen({
   const recordModalTranslate = recordModalProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [900, 0],
+  });
+  const recordModalBackdropOpacity = recordModalProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+  const recordModalContentOpacity = recordModalProgress.interpolate({
+    inputRange: [0, 0.35, 1],
+    outputRange: [0, 0.6, 1],
   });
 
   const loadingBreathScale = loadingBreath.interpolate({
@@ -568,31 +973,34 @@ export function HomeScreen({
   });
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: isDark ? '#140f22' : styles.root.backgroundColor }]}>
       <StatusBar hidden />
+      <ScrollView
+        bounces
+        contentContainerStyle={styles.homeScrollContent}
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
+      >
+      <View style={{ height: rawHeight, width: rawWidth, position: 'relative' }}>
       <Animated.View
         style={[
           styles.imageLayer,
           {
-            left: layout.image.left,
-            top: layout.image.top,
-            width: layout.image.width,
-            height: layout.image.height,
+            left: fullLayout.image.left,
+            top: fullLayout.image.top,
+            width: fullLayout.image.width,
+            height: fullLayout.image.height,
             overflow: 'hidden',
           },
           animatedImageStyle,
         ]}
       >
-        <Image
-          accessibilityIgnoresInvertColors
-          accessible={false}
-          resizeMode="cover"
-          source={homeBackgroundSource}
-          style={{
-            width: layout.image.width,
-            height: layout.image.height,
-          }}
-        />
+        <View style={[styles.homeCanvas, { backgroundColor: isDark ? '#1A1430' : styles.homeCanvas.backgroundColor }]}>
+          <View style={[styles.homeCardSurface, styles.heroCardSurface, { backgroundColor: isDark ? '#201a39' : '#F9F7FE' }]} />
+          <View style={[styles.homeCardSurface, styles.summaryCardSurface, { backgroundColor: isDark ? '#201a39' : '#F9F7FE' }]} />
+          <View style={[styles.homeCardSurface, styles.modeCardSurface, { backgroundColor: isDark ? '#201a39' : '#F9F7FE' }]} />
+          <View style={[styles.homeCardSurface, styles.recentCardSurface, { backgroundColor: isDark ? '#201a39' : '#F9F7FE' }]} />
+        </View>
       </Animated.View>
 
       {/* ──────────────────────────────────────────────────────────────────────
@@ -600,29 +1008,90 @@ export function HomeScreen({
           배경 이미지 위에 위치별로 실시간 동적 텍스트와 에셋들을 절대좌표로 렌더링
           ────────────────────────────────────────────────────────────────────── */}
 
-      {/* 1. 좋은 아침이에요, {userName} (greeting-title) */}
+      {/* 1. 실행 예시 기반 헤더 */}
       <View
         pointerEvents="none"
         style={{
           position: 'absolute',
-          left: layout.image.left + 89 * layout.scale,
-          top: layout.image.top + 43 * layout.scale,
-          width: 245 * layout.scale,
-          height: 38 * layout.scale,
-          justifyContent: 'center',
+          left: layout.image.left + 22 * layout.scale,
+          top: layout.image.top + 50 * layout.scale,
+          width: 326 * layout.scale,
+          height: 70 * layout.scale,
         }}
       >
+        <Image source={homeAvatarSource} style={{
+          position: 'absolute',
+          left: 0,
+          top: 3 * layout.scale,
+          width: 52 * layout.scale,
+          height: 52 * layout.scale,
+        }} resizeMode="contain" />
+        <Text style={{
+          position: 'absolute',
+          left: 64 * layout.scale,
+          top: 1 * layout.scale,
+          color: '#5D51C2',
+          fontFamily: theme.typography.displayFontFamily,
+          fontSize: 24 * layout.scale,
+          letterSpacing: 0.2 * layout.scale,
+          lineHeight: 29 * layout.scale,
+        }}>꿈로그</Text>
         <Text
           style={{
             fontFamily: 'Pretendard',
-            fontWeight: '600', // semibold
-            fontSize: 16 * layout.scale,
-            color: '#2d237a',
+            fontWeight: '600',
+            fontSize: 15 * layout.scale * fontScale,
+            color: '#241B4B',
+            position: 'absolute',
+            left: 64 * layout.scale,
+            top: 33 * layout.scale,
             includeFontPadding: false,
+            letterSpacing: 0.18 * layout.scale,
+            lineHeight: 21 * layout.scale * fontScale,
           }}
         >
-          좋은 아침이에요, {data.userName}
+          좋은 아침이에요, {userName}
         </Text>
+        <Text
+          style={{
+            fontFamily: 'Pretendard',
+            fontWeight: '400',
+            fontSize: 11 * layout.scale * fontScale,
+            color: '#81799E',
+            position: 'absolute',
+            left: 64 * layout.scale,
+            top: 54 * layout.scale,
+            includeFontPadding: false,
+            letterSpacing: 0.18 * layout.scale,
+            lineHeight: 17 * layout.scale * fontScale,
+          }}
+        >
+          오늘은 어떤 꿈 꾸셨나요?
+        </Text>
+        <Animated.Image source={homeMoonSource} style={[
+          {
+          position: 'absolute',
+          left: 248 * layout.scale,
+          top: 4 * layout.scale,
+          width: 66 * layout.scale,
+          height: 66 * layout.scale,
+        },
+        {
+          transform: [{
+            translateY: moonFloat.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -4 * layout.scale],
+            }),
+          }],
+        }
+        ]} resizeMode="contain" />
+        <Image source={homeNotificationSource} style={{
+          position: 'absolute',
+          left: 307 * layout.scale,
+          top: 14 * layout.scale,
+          width: 34 * layout.scale,
+          height: 34 * layout.scale,
+        }} resizeMode="contain" />
       </View>
 
       {/* 2. 알림 개수 뱃지 (notification-count-badge) - 피드백 반영: 더 정교하고 작게 조정 */}
@@ -631,27 +1100,21 @@ export function HomeScreen({
           pointerEvents="none"
           style={{
             position: 'absolute',
-            left: layout.image.left + 351 * layout.scale,
-            top: layout.image.top + 41 * layout.scale,
-            width: 20 * layout.scale,
-            height: 20 * layout.scale,
-            borderRadius: 10 * layout.scale,
-            backgroundColor: '#7558f7',
-            borderWidth: 1.5 * layout.scale,
-            borderColor: '#ffffff',
+            left: layout.image.left + 350 * layout.scale,
+            top: layout.image.top + 49 * layout.scale,
+            width: 16 * layout.scale,
+            height: 16 * layout.scale,
+            borderRadius: 8 * layout.scale,
+            backgroundColor: '#7C67E8',
             justifyContent: 'center',
             alignItems: 'center',
-            shadowColor: '#6f4be8',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
           }}
         >
           <Text
             style={{
               fontFamily: 'Pretendard',
-              fontWeight: '800',
-              fontSize: 10 * layout.scale,
+              fontWeight: '700',
+              fontSize: 10 * layout.scale * fontScale,
               color: '#ffffff',
               includeFontPadding: false,
             }}
@@ -661,37 +1124,192 @@ export function HomeScreen({
         </View>
       )}
 
-      {/* 3. 이번 달 꿈 기록 개수 (dream-count-value) - 개 기록했어요. 와 동일 선상 정렬 */}
-      <View
-        pointerEvents="none"
-        style={{
+      {/* 3. 실행 예시 위치에 맞춘 정적 UI 문구 */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <Image source={homePurpleStarSource} resizeMode="contain" style={{
           position: 'absolute',
-          left: layout.image.left + 39 * layout.scale,
-          top: layout.image.top + 392 * layout.scale,
+          left: layout.image.left + 164 * layout.scale,
+          top: layout.image.top + 151 * layout.scale,
+          width: 24 * layout.scale,
           height: 24 * layout.scale,
-          justifyContent: 'center',
-        }}
-      >
-        <Text
+        }} />
+        <Image source={homeYellowStarSource} resizeMode="contain" style={{
+          position: 'absolute',
+          left: layout.image.left + 335 * layout.scale,
+          top: layout.image.top + 154 * layout.scale,
+          width: 22 * layout.scale,
+          height: 22 * layout.scale,
+        }} />
+        <Animated.Image source={homeBookSource} resizeMode="contain" style={[
+        {
+          position: 'absolute',
+          left: layout.image.left + 208 * layout.scale,
+          top: layout.image.top + 148 * layout.scale,
+          width: 178 * layout.scale,
+          height: 178 * layout.scale,
+        },
+        {
+          transform: [{
+            translateY: bookFloat.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -6 * layout.scale],
+            }),
+          }],
+        }
+        ]} />
+        <Image
+          source={homeHeroConstellationSource}
+          resizeMode="contain"
           style={{
-            fontFamily: 'Pretendard',
-            fontWeight: '500',
-            fontSize: 24 * layout.scale,
-            color: '#2d237a',
-            includeFontPadding: false,
+            position: 'absolute',
+            left: layout.image.left + 131 * layout.scale,
+            top: layout.image.top + 151 * layout.scale,
+            width: 150 * layout.scale,
+            height: 145 * layout.scale,
+            opacity: 0.44,
           }}
-        >
-          {monthlySummary.currentCount}
-        </Text>
+        />
+        <Animated.Image source={homeCloudSource} resizeMode="contain" style={[
+        {
+          position: 'absolute',
+          left: layout.image.left + 304 * layout.scale,
+          top: layout.image.top + 213 * layout.scale,
+          width: 96 * layout.scale,
+          height: 96 * layout.scale,
+        },
+        {
+          transform: [{
+            translateY: cloudFloat.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -3 * layout.scale],
+            }),
+          }],
+        }
+        ]} />
+        <Image source={homeButtonSource} resizeMode="stretch" style={{
+          position: 'absolute',
+          left: layout.image.left + 32 * layout.scale,
+          top: layout.image.top + 226 * layout.scale,
+          width: 132 * layout.scale,
+          height: 50 * layout.scale,
+        }} />
+        <Image source={homeButtonPencilSource} resizeMode="contain" style={{
+          position: 'absolute',
+          left: layout.image.left + 57 * layout.scale,
+          top: layout.image.top + 242 * layout.scale,
+          width: 18 * layout.scale,
+          height: 18 * layout.scale,
+        }} />
+        <Animated.Image source={homeConstellationModeSource} resizeMode="contain" style={[
+        {
+          position: 'absolute',
+          left: layout.image.left + 286 * layout.scale,
+          top: layout.image.top + 351 * layout.scale,
+          width: 84 * layout.scale,
+          height: 102 * layout.scale,
+        },
+        {
+          transform: [{
+            translateY: modeFloat.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -4 * layout.scale],
+            }),
+          }],
+        }
+        ]} />
+        <Text style={[styles.homeOverlayTitle, {
+          left: layout.image.left + 36 * layout.scale,
+          top: layout.image.top + textLayout.heroTitleTop * layout.scale,
+          fontSize: 17 * layout.scale * fontScale,
+        }]}>오늘의 꿈 기록하기</Text>
+        <Text style={[styles.homeOverlayBody, {
+          left: layout.image.left + 36 * layout.scale,
+          top: layout.image.top + textLayout.heroBodyTop * layout.scale,
+          fontSize: 12 * layout.scale * fontScale,
+        }]}>기억이 생생할때, 꿈을 기록해보세요</Text>
+        <Text style={[styles.homeOverlayButton, {
+          left: layout.image.left + 69 * layout.scale,
+          top: layout.image.top + (textLayout.heroButtonTop + (textSize === 'small' ? -5 : textSize === 'large' ? 0 : -5)) * layout.scale,
+          width: 88 * layout.scale,
+          fontSize: (textSize === 'small' ? 11.5 : textSize === 'large' ? 12.5 : 12) * layout.scale * fontScale,
+        }]}>기록하기</Text>
+
+        <Text style={[styles.homeOverlaySectionTitle, {
+          left: layout.image.left + 31 * layout.scale,
+          top: layout.image.top + textLayout.cardTitleTop * layout.scale,
+          fontSize: 13 * layout.scale * cardTitleFontScale,
+        }]}>이번 달 꿈 요약</Text>
+        <Text style={[styles.homeOverlayBody, {
+          left: layout.image.left + (textSize === 'large' ? 42 : 44) * layout.scale,
+          top: layout.image.top + (textLayout.summaryBodyTop - (textSize === 'small' ? 2 : textSize === 'large' ? 4 : 5)) * layout.scale,
+          fontSize: (textSize === 'small' ? 18 : textSize === 'large' ? 22 : 20) * layout.scale * fontScale,
+          lineHeight: (textSize === 'small' ? 24 : textSize === 'large' ? 28 : 26) * layout.scale * fontScale,
+          fontWeight: '500',
+          color: '#5D51C2',
+        }]}>{monthlySummary.currentCount}</Text>
+        <Text style={[styles.homeOverlayBody, {
+          left: layout.image.left + 66 * layout.scale,
+          top: layout.image.top + textLayout.summaryBodyTop * layout.scale,
+          fontSize: 12 * layout.scale * fontScale,
+        }]}>개 기록했어요.</Text>
+        <Text style={[styles.homeOverlayBody, {
+          left: layout.image.left + 32 * layout.scale,
+          top: layout.image.top + textLayout.summaryCompareTop * layout.scale,
+          fontSize: 11 * layout.scale * fontScale,
+        }]}>지난 달보다</Text>
+        <Text style={[styles.homeOverlayButton, {
+          left: layout.image.left + 51 * layout.scale,
+          top: layout.image.top + textLayout.cardButtonTop * layout.scale,
+          width: 110 * layout.scale,
+          fontSize: 11 * layout.scale * fontScale,
+        }]}>상세보기</Text>
+
+        <Text style={[styles.homeOverlaySectionTitle, {
+          left: layout.image.left + 217 * layout.scale,
+          top: layout.image.top + textLayout.cardTitleTop * layout.scale,
+          fontSize: 13 * layout.scale * cardTitleFontScale,
+        }]}>별자리 모드</Text>
+        <Text style={[styles.homeOverlayBody, {
+          left: layout.image.left + 217 * layout.scale,
+          top: layout.image.top + textLayout.constellationBodyTop * layout.scale,
+          width: 82 * layout.scale,
+          fontSize: 9.25 * layout.scale * fontScale,
+          lineHeight: 14 * layout.scale * fontScale,
+        }]} numberOfLines={2}>이번 달 별자리를{'\n'}꿈별로 채워요.</Text>
+        <Text style={[styles.homeOverlayButton, {
+          left: layout.image.left + 237 * layout.scale,
+          top: layout.image.top + textLayout.cardButtonTop * layout.scale,
+          width: 110 * layout.scale,
+          fontSize: 11 * layout.scale * fontScale,
+        }]}>상세보기</Text>
+
+        <View style={{
+          position: 'absolute',
+          left: layout.image.left + 35 * layout.scale,
+          top: layout.image.top + textLayout.recentTitleTop * layout.scale,
+          width: textLayout.recentTitleWidth * layout.scale,
+          height: 31 * layout.scale,
+          backgroundColor: 'transparent',
+          justifyContent: 'center',
+        }}>
+          <Text style={{
+            fontFamily: theme.typography.displayFontFamily,
+            fontWeight: '400',
+            fontSize: 15 * layout.scale * fontScale,
+            color: '#5D51C2',
+            letterSpacing: 0.25 * layout.scale,
+            lineHeight: 22 * layout.scale * fontScale,
+          }}>최근 기록</Text>
+        </View>
       </View>
 
-      {/* 4. 전월 대비 증감 수치 - 지난 달보다 와 동일 선상 정렬 및 감소 시 빨간색 표시 */}
+      {/* 4. 전월 대비 증감 수치 */}
       <View
         pointerEvents="none"
         style={{
           position: 'absolute',
-          left: layout.image.left + 94 * layout.scale,
-          top: layout.image.top + 427 * layout.scale,
+          left: layout.image.left + (textSize === 'large' ? 111 : textSize === 'small' ? 92 : 96) * layout.scale,
+          top: layout.image.top + (textLayout.summaryDeltaTop - (textSize === 'large' ? 6 : textSize === 'small' ? 8 : 8)) * layout.scale,
           height: 18 * layout.scale,
           justifyContent: 'center',
         }}
@@ -699,9 +1317,9 @@ export function HomeScreen({
         <Text
           style={{
             fontFamily: 'Pretendard',
-            fontWeight: '800',
-            fontSize: 13 * layout.scale,
-            color: monthlySummary.previousMonthDelta >= 0 ? '#27ae60' : '#e74c3c',
+            fontWeight: '700',
+            fontSize: 12 * layout.scale * fontScale,
+            color: monthlySummary.previousMonthDelta >= 0 ? '#48B98B' : '#DD7588',
             includeFontPadding: false,
           }}
         >
@@ -711,7 +1329,7 @@ export function HomeScreen({
         </Text>
       </View>
 
-      {/* 5. 최근 기록 동적 렌더링 (recentDreamRows) */}
+      {/* 5. 최근 기록 동적 렌더링 */}
       {mappedRecentDreams.map((dream, index) => {
         const rowRect = HOME_HIT_AREAS.recentDreamRows[index];
         if (!rowRect) return null;
@@ -720,19 +1338,54 @@ export function HomeScreen({
         const thumbSource = index === 0
           ? require('../../assets/home/parts/home-recent-thumb-1.png')
           : require('../../assets/home/parts/home-recent-thumb-2.png');
+        const bubbleColors = ['#FFFDF8', '#FBFAFF', '#F8FCFF'];
+        const accentColors = ['#F1C75B', '#9B86EE', '#72BFDD'];
 
         return (
           <View key={`recent-info-${dream.id}`} pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+            <View
+              style={{
+                position: 'absolute',
+                left: layout.image.left + 28 * layout.scale,
+                top: layout.image.top + y * layout.scale,
+                width: 337 * layout.scale,
+                height: 50 * layout.scale,
+                borderRadius: 16 * layout.scale,
+                backgroundColor: bubbleColors[index] ?? '#F4F0FC',
+                ...Platform.select({
+                  web: {
+                    boxShadow:
+                      '0px 8px 22px rgba(111,92,196,0.11), inset 0px 1px 0px rgba(255,255,255,0.92)',
+                  } as never,
+                  default: {
+                    shadowColor: '#8B7DFF',
+                    shadowOffset: { width: 0, height: 10 },
+                    shadowOpacity: 0.11,
+                    shadowRadius: 22,
+                    elevation: 5,
+                  },
+                }),
+              }}
+            />
+            <View style={{
+              position: 'absolute',
+              left: layout.image.left + 31 * layout.scale,
+              top: layout.image.top + (y + 11) * layout.scale,
+              width: 4 * layout.scale,
+              height: 28 * layout.scale,
+              borderRadius: 7 * layout.scale,
+              backgroundColor: accentColors[index] ?? '#A992FF',
+            }} />
             {/* 썸네일 */}
             <Image
               source={thumbSource}
               style={{
                 position: 'absolute',
-                left: layout.image.left + 32 * layout.scale,
-                top: layout.image.top + (y + 6.5) * layout.scale,
-                width: 48 * layout.scale,
-                height: 48 * layout.scale,
-                borderRadius: 12 * layout.scale,
+                left: layout.image.left + 43 * layout.scale,
+                top: layout.image.top + (y + 5) * layout.scale,
+                width: 40 * layout.scale,
+                height: 40 * layout.scale,
+                borderRadius: 13 * layout.scale,
               }}
               resizeMode="cover"
             />
@@ -741,9 +1394,9 @@ export function HomeScreen({
             <View
               style={{
                 position: 'absolute',
-                left: layout.image.left + 92 * layout.scale,
-                top: layout.image.top + (y + 4) * layout.scale,
-                width: 170 * layout.scale,
+                left: layout.image.left + 94 * layout.scale,
+                top: layout.image.top + (y + textLayout.recentRowTitleTop) * layout.scale,
+                width: textLayout.recentRowTitleWidth * layout.scale,
                 height: 20 * layout.scale,
                 justifyContent: 'center',
               }}
@@ -751,10 +1404,12 @@ export function HomeScreen({
               <Text
                 numberOfLines={1}
                 style={{
-                  fontFamily: 'Pretendard',
-                  fontWeight: '800',
-                  fontSize: 14 * layout.scale,
-                  color: '#2d237a',
+                  fontFamily: theme.typography.displayFontFamily,
+                  fontWeight: '400',
+                  fontSize: 12 * layout.scale * fontScale,
+                  color: '#5D51C2',
+                  letterSpacing: 0.18 * layout.scale,
+                  lineHeight: 20 * layout.scale * fontScale,
                   includeFontPadding: false,
                 }}
               >
@@ -766,17 +1421,17 @@ export function HomeScreen({
             <View
               style={{
                 position: 'absolute',
-                left: layout.image.left + 92 * layout.scale,
-                top: layout.image.top + (y + 26) * layout.scale,
+                left: layout.image.left + 94 * layout.scale,
+                top: layout.image.top + (y + textLayout.recentRowTagsTop) * layout.scale,
                 flexDirection: 'row',
                 gap: 4 * layout.scale,
               }}
             >
-              {dream.tags.map((tag: any) => (
+              {dream.tags.slice(0, 1).map((tag: any) => (
                 <View
                   key={tag.id}
                   style={{
-                    backgroundColor: '#f0ecff',
+                    backgroundColor: '#EEE9FF',
                     borderRadius: 8 * layout.scale,
                     paddingHorizontal: 8 * layout.scale,
                     paddingVertical: 2 * layout.scale,
@@ -785,9 +1440,10 @@ export function HomeScreen({
                   <Text
                     style={{
                       fontFamily: 'Pretendard',
-                      fontWeight: '600',
-                      fontSize: 10 * layout.scale,
-                      color: '#7558f7',
+                      fontWeight: '500',
+                      fontSize: 10 * layout.scale * fontScale,
+                      color: '#7064C9',
+                      letterSpacing: 0.15 * layout.scale,
                       includeFontPadding: false,
                     }}
                   >
@@ -795,26 +1451,46 @@ export function HomeScreen({
                   </Text>
                 </View>
               ))}
+              <View
+                style={{
+                  backgroundColor: dream.mode === 'planet' ? '#E8F6F4' : '#F0EBFF',
+                  borderRadius: 8 * layout.scale,
+                  paddingHorizontal: 7 * layout.scale,
+                  paddingVertical: 2 * layout.scale,
+                }}
+              >
+                <Text style={{
+                  color: dream.mode === 'planet' ? '#4C978B' : '#7161C7',
+                  fontFamily: 'Pretendard-Medium',
+                  fontSize: 9 * layout.scale * fontScale,
+                  includeFontPadding: false,
+                }}>
+                  {dream.mode === 'planet' ? '행성' : '꿈별'}
+                </Text>
+              </View>
             </View>
 
             {/* 작성 날짜 */}
             <View
               style={{
                 position: 'absolute',
-                left: layout.image.left + 265 * layout.scale,
-                top: layout.image.top + (y + 22) * layout.scale,
+                left: layout.image.left + 258 * layout.scale,
+                top: layout.image.top + (y + 5) * layout.scale,
                 width: 70 * layout.scale,
-                height: 18 * layout.scale,
+                height: 20 * layout.scale,
                 justifyContent: 'center',
-                alignItems: 'flex-end',
+                alignItems: 'center',
+                backgroundColor: 'rgba(241,237,252,0.82)',
+                borderRadius: 10 * layout.scale,
               }}
             >
               <Text
                 style={{
                   fontFamily: 'Pretendard',
                   fontWeight: '400',
-                  fontSize: 11 * layout.scale,
-                  color: '#8a82ad',
+                  fontSize: 8.5 * layout.scale * Math.min(fontScale, 1.12),
+                  color: '#9189AE',
+                  letterSpacing: 0.12 * layout.scale,
                   includeFontPadding: false,
                 }}
               >
@@ -826,17 +1502,19 @@ export function HomeScreen({
             <View
               style={{
                 position: 'absolute',
-                left: layout.image.left + 337 * layout.scale,
-                top: layout.image.top + (y + 9) * layout.scale,
-                width: 39 * layout.scale,
-                height: 39 * layout.scale,
+                left: layout.image.left + 341 * layout.scale,
+                top: layout.image.top + (y + 11) * layout.scale,
+                width: 28 * layout.scale,
+                height: 28 * layout.scale,
+                borderRadius: 14 * layout.scale,
+                backgroundColor: 'rgba(242,238,252,0.86)',
                 justifyContent: 'center',
                 alignItems: 'center',
               }}
             >
               <Text
                 style={{
-                  fontSize: 20 * layout.scale,
+                  fontSize: 16 * layout.scale,
                   color: dream.isFavorite ? '#ffd86a' : '#c2bbdf',
                   includeFontPadding: false,
                   lineHeight: 22 * layout.scale,
@@ -852,6 +1530,26 @@ export function HomeScreen({
       {/* ──────────────────────────────────────────────────────────────────────
           [터치 히트영역 설정]
           ────────────────────────────────────────────────────────────────────── */}
+      <Pressable
+        accessibilityLabel="프로필 열기"
+        accessibilityRole="button"
+        onPress={onProfilePress}
+        style={({ pressed }) => [
+          styles.hitArea,
+          styles.webNoOutline,
+          {
+            left: layout.image.left + 18 * layout.scale,
+            top: layout.image.top + 44 * layout.scale,
+            width: 190 * layout.scale,
+            height: 72 * layout.scale,
+          },
+          pressed && styles.pressedFeedback,
+        ]}
+        testID="home-profile-button"
+      >
+        <Text style={styles.srOnly}>프로필 열기</Text>
+      </Pressable>
+
       <Pressable
         accessibilityLabel={`알림 ${notificationCount}개 보기`}
         accessibilityRole="button"
@@ -871,6 +1569,8 @@ export function HomeScreen({
         accessibilityLabel="오늘의 꿈 기록하기"
         accessibilityRole="button"
         onPress={handleRecordCtaPress}
+        onPressIn={() => animateRecordButton(1)}
+        onPressOut={() => animateRecordButton(0)}
         style={[
           styles.hitArea,
           styles.webNoOutline,
@@ -878,14 +1578,32 @@ export function HomeScreen({
         ]}
         testID="home-record-cta"
       >
-        {({ pressed }) => (
+        {() => (
           <Animated.View
             style={[
               {
                 width: HOME_HIT_AREAS.recordCta.width * layout.scale,
                 height: HOME_HIT_AREAS.recordCta.height * layout.scale,
                 borderRadius: 20 * layout.scale,
-                backgroundColor: pressed ? 'rgba(117, 88, 247, 0.08)' : 'transparent',
+                backgroundColor: 'rgba(117, 88, 247, 0.07)',
+                opacity: recordButtonPress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 1],
+                }),
+                transform: [
+                  {
+                    scale: recordButtonPress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [1, 0.985],
+                    }),
+                  },
+                  {
+                    translateY: recordButtonPress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 0.25],
+                    }),
+                  },
+                ],
               },
             ]}
           />
@@ -980,7 +1698,7 @@ export function HomeScreen({
             <Pressable
               accessibilityLabel={`${dream.title}. ${dream.dateLabel}`}
               accessibilityRole="button"
-              onPress={() => onRecentDreamPress(dream)}
+              onPress={() => handleRecentDreamPressLocal(dream.id)}
               style={({ pressed }) => [
                 styles.hitArea,
                 styles.webNoOutline,
@@ -1036,6 +1754,127 @@ export function HomeScreen({
           </Pressable>
         );
       })}
+      </View>
+      </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isConstellationModalVisible}
+        onRequestClose={() => setIsConstellationModalVisible(false)}
+      >
+        <View style={styles.constellationOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setIsConstellationModalVisible(false)}
+          />
+          <View style={styles.constellationCard}>
+            <View style={styles.constellationHeader}>
+              <View>
+                <Text style={[styles.constellationEyebrow, { fontSize: 11 * fontScale }]}>
+                  {new Date().getFullYear()} 별자리 기록
+                </Text>
+                <Text style={[styles.constellationTitle, { fontSize: 21 * fontScale }]}>
+                  달마다 다른 꿈별을 채워가요
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="별자리 모달 닫기"
+                style={styles.constellationClose}
+                onPress={() => setIsConstellationModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color="#5f5790" />
+              </Pressable>
+            </View>
+            <Text style={[styles.constellationDescription, { fontSize: 13 * fontScale }]}>
+              기록 하나마다 황금빛 점이 하나씩 채워져요. 대표 별자리가 완성되면 예비 별자리가 이어집니다.
+            </Text>
+            <View style={styles.constellationNavigator}>
+              <Pressable
+                accessibilityLabel="이전 달 별자리"
+                style={styles.constellationNavButton}
+                onPress={() => setSelectedConstellationMonth((month) => month === 1 ? 12 : month - 1)}
+              >
+                <Ionicons name="chevron-back" size={20} color="#5D51C2" />
+              </Pressable>
+              <View style={styles.constellationMonthHeading}>
+                <Text style={styles.constellationMonthHeadingText}>
+                  {selectedConstellationMonth}월 · {selectedGuide.name}
+                </Text>
+                <Text style={styles.constellationMonthHeadingSub}>
+                  {selectedMonthDreams.length}개 기록 · {selectedGuide.points}개 점
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="다음 달 별자리"
+                style={styles.constellationNavButton}
+                onPress={() => setSelectedConstellationMonth((month) => month === 12 ? 1 : month + 1)}
+              >
+                <Ionicons name="chevron-forward" size={20} color="#5D51C2" />
+              </Pressable>
+            </View>
+            <View style={styles.constellationGuideWrap}>
+              <Image
+                source={CONSTELLATION_GUIDES[selectedConstellationMonth - 1]}
+                style={styles.constellationGuideImage}
+                resizeMode="contain"
+              />
+              <View style={styles.constellationDotProgress}>
+                {Array.from({ length: selectedGuide.points }).map((_, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.constellationProgressDot,
+                      index < selectedMonthDreams.length && styles.constellationProgressDotFilled,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
+            <View style={styles.constellationMonthStrip}>
+              {MONTH_LABELS.map((label, index) => (
+                <Pressable
+                  key={label}
+                  onPress={() => setSelectedConstellationMonth(index + 1)}
+                  style={[
+                    styles.constellationMonthChip,
+                    selectedConstellationMonth === index + 1 && styles.constellationMonthChipSelected,
+                  ]}
+                >
+                  <Text style={[
+                    styles.constellationMonthChipText,
+                    selectedConstellationMonth === index + 1 && styles.constellationMonthChipTextSelected,
+                  ]}>
+                    {index + 1}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.reserveTitle}>완성 후 이어지는 예비 별자리</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reserveList}>
+              {RESERVE_CONSTELLATIONS.map((guide, index) => (
+                <View key={guide.id} style={styles.reserveItem}>
+                  <Image source={RESERVE_GUIDES[index]} style={styles.reserveImage} resizeMode="contain" />
+                  <Text style={styles.reserveLabel}>{guide.name}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.constellationProgress}>
+              <Text style={[styles.constellationProgressText, { fontSize: 12 * fontScale }]}>
+                올해 {completedMonths.size}개월의 별자리 기록을 시작했어요
+              </Text>
+              <View style={styles.constellationProgressTrack}>
+                <View
+                  style={[
+                    styles.constellationProgressFill,
+                    { width: `${(completedMonths.size / 12) * 100}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* =======================================================
           MODAL 1: 오늘의 꿈 기록하기 모달
@@ -1046,18 +1885,29 @@ export function HomeScreen({
         visible={isRecordModalVisible}
         onRequestClose={closeRecordModal}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
+        <Animated.View
+          style={[
+            styles.modalOverlay,
+            {
+              opacity: recordModalBackdropOpacity,
+            },
+          ]}
         >
           <Pressable style={StyleSheet.absoluteFillObject} onPress={closeRecordModal} />
-          
-          <Animated.View 
-            style={[
-              styles.recordContainer,
-              { transform: [{ translateY: recordModalTranslate }] }
-            ]}
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.recordKeyboardWrap}
           >
+            <Animated.View
+              style={[
+                styles.recordContainer,
+                {
+                  opacity: recordModalContentOpacity,
+                  transform: [{ translateY: recordModalTranslate }],
+                },
+              ]}
+            >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>오늘의 꿈 기록하기</Text>
               <TouchableOpacity
@@ -1089,8 +1939,9 @@ export function HomeScreen({
             >
               <Text style={styles.submitCtaText}>AI 분석 및 우주에 연결하기</Text>
             </TouchableOpacity>
-          </Animated.View>
-        </KeyboardAvoidingView>
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </Animated.View>
       </Modal>
 
       {/* =======================================================
@@ -1104,7 +1955,7 @@ export function HomeScreen({
         <View style={styles.loadingOverlay}>
           <Animated.View style={[styles.loadingCenterBox, pulseScaleStyle]}>
             <ActivityIndicator size="large" color={theme.colors.textLight} style={styles.spinner} />
-            <Text style={styles.loadingText}>AI 꿈 분석가가 꿈결님의 꿈 우주를</Text>
+            <Text style={styles.loadingText}>AI 해석 도우미가 {userName}의 꿈 우주를</Text>
             <Text style={styles.loadingSubText}>섬세하게 탐색하고 있어요. 잠시만 기다려주세요...</Text>
           </Animated.View>
         </View>
@@ -1160,11 +2011,14 @@ export function HomeScreen({
                 <Text style={styles.resultSectionTitle}>우주의 메세지</Text>
                 <Text style={styles.resultInterpretation}>{analysisResult?.interpretation}</Text>
               </View>
+              <Text style={styles.resultNotice}>
+                AI 해석은 참고용 기록 도우미이며 의료적 또는 정신건강 진단을 대신하지 않습니다.
+              </Text>
             </ScrollView>
 
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={closeResultModal}
+              onPress={handleSaveAnalysisResult}
               style={styles.resultCloseCta}
             >
               <Text style={styles.resultCloseCtaText}>우주 조각 저장하기</Text>
@@ -1207,6 +2061,210 @@ export function HomeScreen({
           </Animated.View>
         </View>
       </Modal>
+
+      {/* =======================================================
+          MODAL 5: 꿈 상세 정보 모달
+          ======================================================= */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={selectedDetailDream !== null}
+        onRequestClose={() => setSelectedDetailDream(null)}
+      >
+        <View style={styles.detailOverlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setSelectedDetailDream(null)} />
+          
+          {selectedDetailDream && (() => {
+            const moodId = selectedDetailDream.selectedMoodIds?.[0] || 'calm';
+            const foundMood = RECORD_MOODS.find(m => m.id === moodId) || RECORD_MOODS[1];
+            
+            // Format date for display
+            let displayDate = selectedDetailDream.date;
+            const dateParts = selectedDetailDream.date.split('-');
+            if (dateParts.length === 3) {
+              const month = parseInt(dateParts[1], 10);
+              const day = parseInt(dateParts[2], 10);
+              const dateObj = new Date(parseInt(dateParts[0], 10), month - 1, day);
+              const daysOfWeek = ['일', '월', '화', '수', '목', '금', '토'];
+              displayDate = `${month}월 ${day}일 (${daysOfWeek[dateObj.getDay()]})`;
+            }
+
+            return (
+              <View style={styles.detailContainer}>
+                {/* Header */}
+                <View style={styles.detailHeaderRow}>
+                  <Text style={styles.detailDateText}>{displayDate}</Text>
+                  <TouchableOpacity
+                    onPress={() => setSelectedDetailDream(null)}
+                    style={styles.detailCloseBtn}
+                  >
+                    <Ionicons name="close" size={16} color="#7f78a7" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Title */}
+                <Text style={styles.detailTitleText}>{selectedDetailDream.title}</Text>
+
+                {/* Mood Info */}
+                <View style={styles.detailMoodRow}>
+                  <MoodFace mood={foundMood} size={36} />
+                  <View style={styles.detailMoodInfo}>
+                    <Text style={styles.detailMoodLabel}>기분: {foundMood.label}</Text>
+                    <Text style={styles.detailMoodDesc}>이날 꿈속에서 느낀 지배적인 감정이에요.</Text>
+                  </View>
+                </View>
+
+                {/* Keywords */}
+                {selectedDetailDream.selectedKeywordIds && selectedDetailDream.selectedKeywordIds.length > 0 && (
+                  <View style={styles.detailTagWrapper}>
+                    {selectedDetailDream.selectedKeywordIds.map((kwId: string) => {
+                      const kwLabel = getKeywordLabel(kwId);
+                      return (
+                        <View key={kwId} style={styles.detailTag}>
+                          <Text style={styles.detailTagText}>✨ #{kwLabel}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {/* Memo */}
+                <Text style={styles.detailSectionTitle}>꿈 일기 내용</Text>
+                <ScrollView style={styles.detailMemoScroll} showsVerticalScrollIndicator={true}>
+                  <Text style={styles.detailMemoText}>{selectedDetailDream.memo || '작성된 내용이 없습니다.'}</Text>
+                </ScrollView>
+
+                {/* AI Interpretation if available */}
+                {selectedDetailDream.aiInterpretation && (
+                  <View style={styles.detailAiSection}>
+                    <Text style={styles.detailSectionTitle}>🔮 AI 참고 해석</Text>
+                    <ScrollView style={styles.detailAiScroll} showsVerticalScrollIndicator={true}>
+                      <Text style={styles.detailAiText}>{selectedDetailDream.aiInterpretation}</Text>
+                    </ScrollView>
+                    <Text style={styles.detailAiNotice}>
+                      참고용 해석이에요. 건강 또는 정신건강 판단은 전문가 상담을 이용해 주세요.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Action Buttons */}
+                <View style={styles.detailActionRow}>
+                  <TouchableOpacity
+                    onPress={() => handleEditDreamLocal(selectedDetailDream.date, selectedDetailDream.id)}
+                    style={styles.detailButtonEdit}
+                  >
+                    <Text style={styles.detailButtonEditText}>수정하기</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteDreamLocal(selectedDetailDream.id)}
+                    style={styles.detailButtonDelete}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#ff3b30" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+      </Modal>
+
+      {/* =======================================================
+          MODAL 6: 알림 목록 모달
+          ======================================================= */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isNotificationModalVisible}
+        onRequestClose={() => setIsNotificationModalVisible(false)}
+      >
+        <View style={styles.notifOverlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setIsNotificationModalVisible(false)} />
+          
+          <View style={styles.notifContainer}>
+            {/* Header */}
+            <View style={styles.notifHeader}>
+              <Text style={styles.notifHeaderTitle}>🌌 우주 알림 센터</Text>
+              <TouchableOpacity
+                onPress={() => setIsNotificationModalVisible(false)}
+                style={styles.notifCloseBtn}
+              >
+                <Ionicons name="close" size={18} color="#7f78a7" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Actions */}
+            {notificationsList.length > 0 && (
+              <View style={styles.notifActionRow}>
+                <TouchableOpacity onPress={handleMarkAllNotificationsAsRead} style={styles.notifActionBtn}>
+                  <Text style={styles.notifActionBtnText}>모두 읽음</Text>
+                </TouchableOpacity>
+                <View style={styles.notifActionDivider} />
+                <TouchableOpacity onPress={handleClearAllNotifications} style={styles.notifActionBtn}>
+                  <Text style={styles.notifActionBtnText}>모두 삭제</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Notification Items List */}
+            <ScrollView 
+              style={styles.notifScroll} 
+              contentContainerStyle={notificationsList.length === 0 ? styles.notifEmptyContainer : undefined}
+              showsVerticalScrollIndicator={true}
+            >
+              {notificationsList.length === 0 ? (
+                <View style={styles.notifEmptyBox}>
+                  <Ionicons name="notifications-off-outline" size={48} color="#c7c2e2" style={styles.notifEmptyIcon} />
+                  <Text style={styles.notifEmptyText}>현재 도착한 은하수 알림이 없습니다.</Text>
+                  <Text style={styles.notifEmptySubText}>새로운 꿈을 기록하면 다양한 소식을 받을 수 있어요.</Text>
+                </View>
+              ) : (
+                notificationsList.map((item) => {
+                  // Format time
+                  let relativeTime = '방금 전';
+                  try {
+                    const diffMs = Date.now() - new Date(item.timestamp).getTime();
+                    const diffMins = Math.floor(diffMs / 60000);
+                    if (diffMins < 1) relativeTime = '방금 전';
+                    else if (diffMins < 60) relativeTime = `${diffMins}분 전`;
+                    else {
+                      const diffHours = Math.floor(diffMins / 60);
+                      if (diffHours < 24) relativeTime = `${diffHours}시간 전`;
+                      else {
+                        const diffDays = Math.floor(diffHours / 24);
+                        relativeTime = `${diffDays}일 전`;
+                      }
+                    }
+                  } catch {}
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      activeOpacity={0.7}
+                      onPress={() => handleMarkSingleAsRead(item.id)}
+                      style={[
+                        styles.notifItem,
+                        !item.isRead && styles.notifItemUnread
+                      ]}
+                    >
+                      <View style={styles.notifItemHeader}>
+                        <Text style={[
+                          styles.notifItemTitle,
+                          !item.isRead && styles.notifItemTitleUnread
+                        ]}>
+                          {item.title}
+                        </Text>
+                        {!item.isRead && <View style={styles.unreadDot} />}
+                      </View>
+                      <Text style={styles.notifItemBody}>{item.body}</Text>
+                      <Text style={styles.notifItemTime}>{relativeTime}</Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1214,11 +2272,66 @@ export function HomeScreen({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#F4F0FC',
     overflow: 'hidden',
+  },
+  homeScrollContent: {
+    paddingBottom: 18,
+    paddingTop: 14,
   },
   imageLayer: {
     position: 'absolute',
+  },
+  homeCanvas: {
+    backgroundColor: '#F4F0FC',
+    height: '100%',
+    width: '100%',
+  },
+  homeCardSurface: {
+    backgroundColor: '#F9F7FE',
+    borderWidth: 0,
+    position: 'absolute',
+    ...Platform.select({
+      web: {
+          boxShadow:
+            '0px 10px 24px rgba(139,125,255,0.12), inset 0px 2px 4px rgba(139,125,255,0.07)',
+        } as never,
+      default: {
+        shadowColor: '#8B7DFF',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.12,
+        shadowRadius: 24,
+        elevation: 5,
+      },
+    }),
+  },
+  heroCardSurface: {
+    borderRadius: 24,
+    height: 184,
+    left: 18,
+    top: 137,
+    width: 357,
+  },
+  summaryCardSurface: {
+    borderRadius: 20,
+    height: 143,
+    left: 18,
+    top: 343,
+    width: 175,
+  },
+  modeCardSurface: {
+    borderRadius: 20,
+    height: 143,
+    left: 200,
+    top: 343,
+    width: 175,
+  },
+  recentCardSurface: {
+    borderRadius: 24,
+    height: 245,
+    left: 18,
+    top: 511,
+    width: 357,
   },
   backgroundImage: {
     height: '100%',
@@ -1248,11 +2361,284 @@ const styles = StyleSheet.create({
   recordCtaCard: {
     backgroundColor: '#ffffff',
   },
+  homeOverlayTitle: {
+    position: 'absolute',
+    fontFamily: theme.typography.displayFontFamily,
+    fontWeight: '400',
+    color: '#5D51C2',
+    letterSpacing: 0.25,
+    lineHeight: 25,
+  },
+  homeOverlaySectionTitle: {
+    position: 'absolute',
+    fontFamily: theme.typography.displayFontFamily,
+    fontWeight: '400',
+    color: '#5D51C2',
+    letterSpacing: 0.22,
+    lineHeight: 20,
+  },
+  homeOverlayBody: {
+    position: 'absolute',
+    fontFamily: 'Pretendard',
+    fontWeight: '400',
+    color: '#756EA0',
+    letterSpacing: 0.18,
+    lineHeight: 18,
+  },
+  homeOverlayButton: {
+    position: 'absolute',
+    fontFamily: theme.typography.displayFontFamily,
+    fontWeight: '400',
+    color: '#5D51C2',
+    letterSpacing: 0.18,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  constellationOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(35, 27, 73, 0.48)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  constellationCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    backgroundColor: '#F9F7FE',
+    padding: 20,
+    borderWidth: 0,
+    shadowColor: '#49349b',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  constellationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  constellationEyebrow: {
+    fontFamily: 'Pretendard',
+    fontWeight: '500',
+    color: '#5D51C2',
+    letterSpacing: 0.25,
+    marginBottom: 4,
+  },
+  constellationTitle: {
+    fontFamily: theme.typography.displayFontFamily,
+    fontWeight: '400',
+    color: '#5D51C2',
+    letterSpacing: 0.2,
+    lineHeight: 29,
+  },
+  constellationClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F3F0FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  constellationDescription: {
+    fontFamily: 'Pretendard',
+    fontWeight: '400',
+    color: '#756EA0',
+    lineHeight: 21,
+    letterSpacing: 0.18,
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  constellationNavigator: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  constellationNavButton: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  constellationMonthHeading: {
+    alignItems: 'center',
+  },
+  constellationMonthHeadingText: {
+    color: '#5D51C2',
+    fontFamily: theme.typography.displayFontFamily,
+    fontSize: 16,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  constellationMonthHeadingSub: {
+    color: '#8C84A9',
+    fontFamily: 'Pretendard',
+    fontSize: 11,
+    fontWeight: '400',
+    letterSpacing: 0.18,
+    marginTop: 3,
+  },
+  constellationGuideWrap: {
+    alignItems: 'center',
+    backgroundColor: '#EEE9FF',
+    borderRadius: 22,
+    paddingBottom: 10,
+    paddingTop: 8,
+  },
+  constellationGuideImage: {
+    height: 250,
+    width: 205,
+  },
+  constellationDotProgress: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: -4,
+  },
+  constellationProgressDot: {
+    backgroundColor: '#D8D0F2',
+    borderRadius: 5,
+    height: 10,
+    width: 10,
+  },
+  constellationProgressDotFilled: {
+    backgroundColor: '#FFD75E',
+    shadowColor: '#E8B936',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  constellationMonthStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    justifyContent: 'center',
+    marginTop: 11,
+  },
+  constellationMonthChip: {
+    alignItems: 'center',
+    backgroundColor: '#F1EDFA',
+    borderRadius: 10,
+    height: 23,
+    justifyContent: 'center',
+    width: 23,
+  },
+  constellationMonthChipSelected: {
+    backgroundColor: '#5D51C2',
+  },
+  constellationMonthChipText: {
+    color: '#8C84A9',
+    fontFamily: 'Pretendard',
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  constellationMonthChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  reserveTitle: {
+    color: '#5D51C2',
+    fontFamily: 'Pretendard',
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.18,
+    marginBottom: 7,
+    marginTop: 12,
+  },
+  reserveList: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  reserveItem: {
+    alignItems: 'center',
+    backgroundColor: '#F1EDFA',
+    borderRadius: 14,
+    padding: 6,
+    width: 72,
+  },
+  reserveImage: {
+    height: 62,
+    width: 50,
+  },
+  reserveLabel: {
+    color: '#756EA0',
+    fontFamily: 'Pretendard',
+    fontSize: 9,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  constellationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  constellationMonth: {
+    width: '23%',
+    minHeight: 82,
+    borderRadius: 16,
+    backgroundColor: '#F6F4FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+  },
+  constellationMonthUnlocked: {
+    backgroundColor: '#FFF8E3',
+    borderWidth: 1,
+    borderColor: '#ffe5a0',
+  },
+  constellationImage: {
+    width: 48,
+    height: 48,
+  },
+  constellationImageLocked: {
+    opacity: 0.2,
+    tintColor: '#aaa4ba',
+  },
+  constellationMonthLabel: {
+    marginTop: 2,
+    fontFamily: 'Pretendard',
+    fontWeight: '700',
+    color: '#aaa4ba',
+  },
+  constellationMonthLabelUnlocked: {
+    color: '#765a20',
+  },
+  constellationProgress: {
+    marginTop: 16,
+    backgroundColor: '#f6f3ff',
+    borderRadius: 16,
+    padding: 13,
+  },
+  constellationProgressText: {
+    fontFamily: 'Pretendard',
+    fontWeight: '500',
+    color: '#5D51C2',
+    letterSpacing: 0.18,
+    marginBottom: 8,
+  },
+  constellationProgressTrack: {
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: '#E3DCFF',
+    overflow: 'hidden',
+  },
+  constellationProgressFill: {
+    height: '100%',
+    borderRadius: 99,
+    backgroundColor: '#7C67E8',
+  },
 
   // 1. 꿈 기록 모달 스타일
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(20, 16, 38, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  recordKeyboardWrap: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   recordContainer: {
@@ -1453,6 +2839,14 @@ const styles = StyleSheet.create({
     color: '#e2e0ed',
     lineHeight: 24,
   },
+  resultNotice: {
+    color: '#B9B4D3',
+    fontFamily: 'Pretendard',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 10,
+    paddingHorizontal: 4,
+  },
   resultCloseCta: {
     backgroundColor: theme.colors.accentDark,
     borderRadius: 14,
@@ -1516,5 +2910,310 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: theme.typography.fontFamily,
     fontWeight: theme.typography.weights.semibold,
+  },
+
+  // 5. 꿈 상세 정보 모달 스타일
+  detailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(23, 19, 48, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailContainer: {
+    width: '100%',
+    maxWidth: 350,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#2b1a6b',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  detailHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  detailDateText: {
+    fontFamily: 'Pretendard',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#8b84b5',
+  },
+  detailCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f1f0f7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailTitleText: {
+    fontFamily: 'Pretendard',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#241B4B',
+    lineHeight: 24,
+    marginBottom: 16,
+  },
+  detailSectionTitle: {
+    fontFamily: 'Pretendard',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#a09abb',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  detailMoodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#f8f7fc',
+    padding: 10,
+    borderRadius: 16,
+    marginBottom: 12,
+  },
+  detailMoodInfo: {
+    flex: 1,
+  },
+  detailMoodLabel: {
+    fontFamily: 'Pretendard',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#241B4B',
+  },
+  detailMoodDesc: {
+    fontFamily: 'Pretendard',
+    fontSize: 10,
+    color: '#8b84b5',
+    marginTop: 1,
+  },
+  detailTagWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  detailTag: {
+    backgroundColor: '#f0ecff',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  detailTagText: {
+    fontFamily: 'Pretendard',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6952D9',
+  },
+  detailMemoScroll: {
+    maxHeight: 100,
+    marginBottom: 14,
+    backgroundColor: '#faf9ff',
+    padding: 10,
+    borderRadius: 12,
+  },
+  detailMemoText: {
+    fontFamily: 'Pretendard',
+    fontSize: 13,
+    color: '#49426c',
+    lineHeight: 18,
+  },
+  detailAiSection: {
+    marginBottom: 14,
+    backgroundColor: '#f6f3ff',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e8e2ff',
+  },
+  detailAiScroll: {
+    maxHeight: 100,
+  },
+  detailAiText: {
+    fontFamily: 'Pretendard',
+    fontSize: 12,
+    color: '#5c48b5',
+    lineHeight: 18,
+  },
+  detailAiNotice: {
+    color: '#7D769C',
+    fontFamily: 'Pretendard',
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 8,
+  },
+  detailActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  detailButtonEdit: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#7C67E8',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailButtonEditText: {
+    fontFamily: 'Pretendard',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  detailButtonDelete: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#ffebeb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // 6. 알림 모달 스타일
+  notifOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(23, 19, 48, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  notifContainer: {
+    width: '100%',
+    maxWidth: 360,
+    maxHeight: '80%',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#2b1a6b',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  notifHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  notifHeaderTitle: {
+    fontFamily: 'Pretendard',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#241B4B',
+  },
+  notifCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f1f0f7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notifActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f0f7',
+  },
+  notifActionBtn: {
+    paddingVertical: 2,
+  },
+  notifActionBtnText: {
+    fontFamily: 'Pretendard',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6952D9',
+  },
+  notifActionDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: '#d0cae8',
+  },
+  notifScroll: {
+    flex: 1,
+  },
+  notifEmptyContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notifEmptyBox: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  notifEmptyIcon: {
+    marginBottom: 12,
+  },
+  notifEmptyText: {
+    fontFamily: 'Pretendard',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#49426c',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  notifEmptySubText: {
+    fontFamily: 'Pretendard',
+    fontSize: 11,
+    color: '#8b84b5',
+    textAlign: 'center',
+  },
+  notifItem: {
+    backgroundColor: '#f9f9fc',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#f0eff5',
+  },
+  notifItemUnread: {
+    backgroundColor: '#f5f0ff',
+    borderColor: '#e5dcff',
+  },
+  notifItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  notifItemTitle: {
+    fontFamily: 'Pretendard',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#5c5483',
+    flex: 1,
+  },
+  notifItemTitleUnread: {
+    color: '#241B4B',
+    fontWeight: '800',
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#7C67E8',
+    marginLeft: 6,
+  },
+  notifItemBody: {
+    fontFamily: 'Pretendard',
+    fontSize: 12,
+    color: '#5c5483',
+    lineHeight: 16,
+    marginBottom: 6,
+  },
+  notifItemTime: {
+    fontFamily: 'Pretendard',
+    fontSize: 10,
+    color: '#a09abb',
   },
 });

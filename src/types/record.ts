@@ -1,4 +1,5 @@
 import type { DreamModeId, HomeTabId } from './home';
+import type { DreamStarId } from '../data/dreamStars';
 
 export type RecordModeId = DreamModeId;
 
@@ -26,6 +27,7 @@ export type DreamMood = {
 
 export type RecordFormState = {
   mode: RecordModeId;
+  selectedStarId: DreamStarId;
   title: string;
   selectedKeywordIds: string[];
   selectedMoodIds: DreamMoodId[];
@@ -49,4 +51,9 @@ export type SavedDream = {
   memo: string;
   createdAt: string;
   isFavorite?: boolean;
+  aiInterpretation?: string;
+  constellationId?: string;
+  constellationPointIndex?: number;
+  selectedStarId?: DreamStarId;
+  planetId?: string;
 };

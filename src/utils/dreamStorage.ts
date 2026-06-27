@@ -1,7 +1,43 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SavedDream, RecordActionPayload } from '../types/record';
+import {
+  MONTHLY_CONSTELLATIONS,
+  RESERVE_CONSTELLATIONS,
+  constellationForDate,
+} from '../data/constellations';
+import { DEFAULT_DREAM_STAR_ID, isDreamStarId } from '../data/dreamStars';
 
 const DREAMS_STORAGE_KEY = '@dreamlog_saved_dreams';
+
+function nextConstellationAssignment(date: string, monthDreams: SavedDream[]) {
+  const month = Number(date.slice(5, 7)) || new Date().getMonth() + 1;
+  const candidates = [
+    MONTHLY_CONSTELLATIONS[month - 1],
+    ...RESERVE_CONSTELLATIONS,
+  ];
+
+  for (const candidate of candidates) {
+    const usedPoints = new Set(
+      monthDreams
+        .filter((dream) => dream.constellationId === candidate.id)
+        .map((dream) => dream.constellationPointIndex)
+        .filter((index): index is number => index !== undefined),
+    );
+    const availablePoint = Array.from(
+      { length: candidate.points },
+      (_, index) => index,
+    ).find((index) => !usedPoints.has(index));
+    if (availablePoint !== undefined) {
+      return { ...candidate, pointIndex: availablePoint };
+    }
+  }
+
+  const fallback = constellationForDate(date, monthDreams.length);
+  return {
+    ...fallback,
+    pointIndex: monthDreams.length % fallback.points,
+  };
+}
 
 // Helper to format Date to YYYY-MM-DD
 export function formatDateString(date: Date): string {
@@ -47,7 +83,33 @@ export async function getSavedDreams(): Promise<SavedDream[]> {
       }
       return INITIAL_SEED_DREAMS;
     }
-    return JSON.parse(raw) as SavedDream[];
+    const parsed = (JSON.parse(raw) as SavedDream[]).filter(
+      (d) => d && typeof d === 'object' && d.id && d.createdAt && d.date
+    );
+    let changed = false;
+    const chronological = [...parsed].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    const constellationCounts = new Map<string, number>();
+    chronological.forEach((dream) => {
+      if (dream.mode !== 'constellation') return;
+      const monthKey = (dream.date || '').slice(0, 7);
+      if (!monthKey) return;
+      const index = constellationCounts.get(monthKey) ?? 0;
+      if (!dream.constellationId || dream.constellationPointIndex === undefined) {
+        const assignment = constellationForDate(dream.date, index);
+        dream.constellationId = assignment.id;
+        dream.constellationPointIndex = index % assignment.points;
+        changed = true;
+      }
+      if (!isDreamStarId(dream.selectedStarId)) {
+        dream.selectedStarId = DEFAULT_DREAM_STAR_ID;
+        changed = true;
+      }
+      constellationCounts.set(monthKey, index + 1);
+    });
+    if (changed) {
+      try { await AsyncStorage.setItem(DREAMS_STORAGE_KEY, JSON.stringify(parsed)); } catch {}
+    }
+    return parsed;
   } catch {
     // 웹 환경에서 AsyncStorage 네이티브 모듈 미지원 시 시드 데이터 반환
     return INITIAL_SEED_DREAMS;
@@ -57,10 +119,45 @@ export async function getSavedDreams(): Promise<SavedDream[]> {
 export async function saveDream(
   payload: RecordActionPayload,
   dreamId?: string,
-  targetDate?: string
+  targetDate?: string,
+  aiInterpretation?: string
 ): Promise<SavedDream> {
   const dreams = await getSavedDreams();
   const dateStr = targetDate || formatDateString(new Date());
+  // A record is edited only when its id is explicitly supplied. Multiple dreams
+  // on the same day are valid and must each receive their own collection item.
+  const existingDream = dreamId
+    ? dreams.find((dream) => dream.id === dreamId)
+    : undefined;
+  const monthKey = dateStr.slice(0, 7);
+  const monthDreams = dreams.filter(
+    (dream) =>
+      dream.date.startsWith(monthKey) &&
+      dream.mode === 'constellation' &&
+      dream.id !== dreamId,
+  );
+  const assignment = nextConstellationAssignment(dateStr, monthDreams);
+  const collectionFields = payload.mode === 'constellation'
+    ? {
+        constellationId:
+          existingDream?.mode === 'constellation' && existingDream.constellationId
+            ? existingDream.constellationId
+            : assignment.id,
+        constellationPointIndex:
+          existingDream?.mode === 'constellation' &&
+          existingDream.constellationPointIndex !== undefined
+            ? existingDream.constellationPointIndex
+            : assignment.pointIndex,
+        planetId: undefined,
+      }
+    : {
+        constellationId: undefined,
+        constellationPointIndex: undefined,
+        planetId:
+          existingDream?.mode === 'planet' && existingDream.planetId
+            ? existingDream.planetId
+            : `dream-planet-${(dreams.filter((dream) => dream.planetId).length % 6) + 1}`,
+      };
 
   if (dreamId) {
     // Editing an existing dream
@@ -73,27 +170,14 @@ export async function saveDream(
         selectedKeywordIds: payload.selectedKeywordIds,
         selectedMoodIds: payload.selectedMoodIds,
         memo: payload.memo,
+        selectedStarId: payload.selectedStarId,
+        aiInterpretation: aiInterpretation || dreams[idx].aiInterpretation,
+        ...collectionFields,
       };
       dreams[idx] = updatedDream;
       try { await AsyncStorage.setItem(DREAMS_STORAGE_KEY, JSON.stringify(dreams)); } catch {}
       return updatedDream;
     }
-  }
-
-  // 기존에 해당 날짜에 기록된 꿈이 있다면 덮어쓰기(수정)하여 중복 방지
-  const existingIdx = dreams.findIndex((d) => d.date === dateStr);
-  if (existingIdx !== -1) {
-    const updatedDream: SavedDream = {
-      ...dreams[existingIdx],
-      title: payload.title || '제목 없음',
-      mode: payload.mode,
-      selectedKeywordIds: payload.selectedKeywordIds,
-      selectedMoodIds: payload.selectedMoodIds,
-      memo: payload.memo,
-    };
-    dreams[existingIdx] = updatedDream;
-    try { await AsyncStorage.setItem(DREAMS_STORAGE_KEY, JSON.stringify(dreams)); } catch {}
-    return updatedDream;
   }
 
   // Creating a new dream
@@ -105,7 +189,10 @@ export async function saveDream(
     selectedKeywordIds: payload.selectedKeywordIds,
     selectedMoodIds: payload.selectedMoodIds,
     memo: payload.memo,
+    selectedStarId: payload.selectedStarId,
     createdAt: new Date().toISOString(),
+    aiInterpretation,
+    ...collectionFields,
   };
 
   dreams.unshift(newDream); // Add to beginning (most recent first)
@@ -121,4 +208,45 @@ export async function deleteDream(id: string): Promise<void> {
   } catch {
     // 웹 환경에서 AsyncStorage 미지원 시 무시
   }
+}
+
+export function calculateStreak(dreams: SavedDream[]): number {
+  if (dreams.length === 0) return 0;
+  
+  // YYYY-MM-DD 포맷 날짜만 추출 및 중복 제거
+  const dates = dreams
+    .map((d) => d.date)
+    .filter((dateStr): dateStr is string => typeof dateStr === 'string' && dateStr.length === 10);
+  
+  const uniqueSortedDates = Array.from(new Set(dates)).sort();
+  
+  let maxS = 0;
+  let currentS = 0;
+  let prevMs: number | null = null;
+
+  for (const dateStr of uniqueSortedDates) {
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) continue;
+    
+    const current = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    current.setHours(0, 0, 0, 0);
+    const currentMs = current.getTime();
+
+    if (prevMs === null) {
+      currentS = 1;
+    } else {
+      const diffDays = Math.round((currentMs - prevMs) / (1000 * 60 * 60 * 24));
+      if (diffDays === 1) {
+        currentS += 1;
+      } else if (diffDays > 1) {
+        if (currentS > maxS) {
+          maxS = currentS;
+        }
+        currentS = 1;
+      }
+    }
+    prevMs = currentMs;
+  }
+
+  return Math.max(maxS, currentS);
 }
