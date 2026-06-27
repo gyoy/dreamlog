@@ -8,16 +8,17 @@ const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const PROXY_SERVER_URL = process.env.EXPO_PUBLIC_PROXY_SERVER_URL;
 
 // 로컬 SDK 클라이언트 초기화
+const hasValidKey = GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY_HERE' && GEMINI_API_KEY !== 'your_gemini_api_key_here';
 let genAI: GoogleGenerativeAI | null = null;
 
-if (GEMINI_API_KEY && !PROXY_SERVER_URL) {
+if (hasValidKey && !PROXY_SERVER_URL) {
   genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
   console.log('[Gemini SDK] 로컬 다이렉트 호출 모드로 초기화되었습니다.');
 } else if (PROXY_SERVER_URL) {
   console.log(`[Gemini SDK] 프록시 서버 호출 모드로 작동합니다. 서버 URL: ${PROXY_SERVER_URL}`);
 } else {
   console.warn(
-    '[Gemini SDK] EXPO_PUBLIC_GEMINI_API_KEY 또는 EXPO_PUBLIC_PROXY_SERVER_URL 환경 변수가 설정되지 않았습니다. .env 파일을 프로젝트 루트에 설정해 주세요.'
+    '[Gemini SDK] 유효한 EXPO_PUBLIC_GEMINI_API_KEY 또는 EXPO_PUBLIC_PROXY_SERVER_URL 환경 변수가 설정되지 않았습니다. 데모용 모의 데이터 모드로 자동 구동됩니다.'
   );
 }
 
@@ -66,11 +67,46 @@ export async function analyzeDream(dreamText: string, userId: string = 'dev-user
     }
   }
 
-  // --- 로컬 SDK 직접 호출 모드 ---
+  // --- 데모용 모의 데이터(Mock Data) 자동 폴백 ---
   if (!genAI) {
-    throw new Error('Gemini API 클라이언트가 초기화되지 않았습니다. .env 환경 변수를 확인해주세요.');
+    console.log('[Gemini SDK] API 키가 없어 데모용 모의 분석 데이터를 반환합니다.');
+    await new Promise((resolve) => setTimeout(resolve, 1500)); // 1.5초 로딩 연출
+    
+    const text = dreamText.trim();
+    if (text.includes('바다') || text.includes('물') || text.includes('파도')) {
+      return {
+        summary: '맑은 바다 위를 평화롭게 거니는 꿈',
+        emotion: '평온함',
+        symbols: ['바다', '물결', '자유'],
+        interpretation: '맑은 바다나 물결은 감정의 안정과 마음의 평화를 뜻합니다. 현재 겪고 있는 스트레스나 고민이 차차 씻겨 내려가고, 내면의 잔잔함과 깊은 안식을 찾을 수 있음을 보여주는 아주 긍정적인 메시지입니다.',
+      };
+    }
+    if (text.includes('하늘') || text.includes('날') || text.includes('구름') || text.includes('우주') || text.includes('별')) {
+      return {
+        summary: '하늘 높이 날아올라 자유를 만끽하는 꿈',
+        emotion: '신비로움',
+        symbols: ['하늘', '비행', '해방감'],
+        interpretation: '하늘을 날아다니는 꿈은 현재의 얽매인 상황에서 벗어나 더 높은 곳을 향해 비상하려는 본능적인 성장 욕구를 나타냅니다. 조만간 계획하고 소망하던 일에서 가슴 트이는 상쾌한 진전이 있을 것입니다.',
+      };
+    }
+    if (text.includes('도망') || text.includes('쫓') || text.includes('괴물') || text.includes('숨')) {
+      return {
+        summary: '누군가에게 쫓기며 긴박하게 도망치는 꿈',
+        emotion: '불안함',
+        symbols: ['추격', '막다른길', '회피'],
+        interpretation: '쫓기는 꿈은 현재 일상생활에서 느끼는 책임감이나 압박감으로부터 회피하고 싶은 마음을 반영합니다. 조급해하기보다 잠시 호흡을 가다듬고, 스스로에게 조금 더 관대해지는 여유를 선물해 보라는 무의식의 조언입니다.',
+      };
+    }
+    // 기본 폴백 데이터
+    return {
+      summary: '반짝이는 밤하늘 아래 조용히 사색하는 꿈',
+      emotion: '신기함',
+      symbols: ['별빛', '고요', '탐험'],
+      interpretation: '어두운 밤하늘과 별빛은 마음속의 숨겨진 아이디어와 직관을 자극합니다. 스스로도 잘 깨닫지 못했던 내면의 잠재력과 창조적인 영감이 떠오르고 있음을 의미하며, 천천히 한 걸음씩 나아가면 훌륭한 길을 찾게 될 것입니다.',
+    };
   }
 
+  // --- 로컬 SDK 직접 호출 모드 ---
   const model = genAI.getGenerativeModel({
     model: DEFAULT_MODEL,
     systemInstruction: 
@@ -147,11 +183,19 @@ export async function extractDreamTags(dreamText: string): Promise<string[]> {
     }
   }
 
-  // --- 로컬 SDK 직접 호출 모드 ---
+  // --- 데모용 모의 데이터 자동 폴백 ---
   if (!genAI) {
-    return ['꿈', '기록'];
+    const text = dreamText.trim();
+    const tags = ['꿈', '기록'];
+    if (text.includes('바다') || text.includes('물')) tags.push('바다');
+    if (text.includes('하늘') || text.includes('날')) tags.push('비행');
+    if (text.includes('도망') || text.includes('쫓')) tags.push('탈출');
+    if (text.includes('성') || text.includes('궁전')) tags.push('성');
+    if (text.includes('친구') || text.includes('가족')) tags.push('사람');
+    return Array.from(new Set(tags)).slice(0, 3);
   }
 
+  // --- 로컬 SDK 직접 호출 모드 ---
   const model = genAI.getGenerativeModel({
     model: DEFAULT_MODEL,
     systemInstruction:
@@ -198,11 +242,19 @@ export async function generateDreamImagePrompt(dreamText: string): Promise<strin
     }
   }
 
-  // --- 로컬 SDK 직접 호출 모드 ---
+  // --- 데모용 모의 데이터 자동 폴백 ---
   if (!genAI) {
-    return 'A dreamy, surreal digital art representing dreams, high quality';
+    const text = dreamText.trim();
+    if (text.includes('바다') || text.includes('물')) {
+      return 'A surreal digital art of a person walking on a calm glowing ocean under a starry sky, soft lavender and blue tones, dreamy illustration';
+    }
+    if (text.includes('하늘') || text.includes('날')) {
+      return 'A soft glowing illustration of flying high above fluffy pink clouds towards a crescent moon, pastel fantasy style, surreal digital art';
+    }
+    return 'A dreamy and surreal digital art representing dreams, soft pastel colors, glowing constellations in a deep purple space';
   }
 
+  // --- 로컬 SDK 직접 호출 모드 ---
   const model = genAI.getGenerativeModel({
     model: DEFAULT_MODEL,
     systemInstruction:
